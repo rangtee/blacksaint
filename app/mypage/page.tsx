@@ -1,12 +1,13 @@
 "use client";
 import React, { useState, useEffect, Fragment, useRef } from 'react';
-import { User, Settings, Edit3, Phone, BookOpen, Music, FileText, ChevronRight, X, LogOut, Shield, Users, KeyRound, Plus, Moon, Sun, Palette, Camera } from 'lucide-react';
+import { User, Settings, Edit3, Phone, BookOpen, Music, FileText, ChevronRight, X, LogOut, Shield, Users, KeyRound, Plus, Moon, Sun, Palette, Camera, GraduationCap } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 import { supabase } from '../../lib/supabase';
 import { useTheme } from 'next-themes'; 
 import { useRouter } from 'next/navigation'; 
 
-interface Profile { id: string; name: string; student_id: string; session: string; generation: string | null; major: string | null; phone: string | null; role: string; position: string | null; profile_image_url?: string; }
+// 🌟 프로필 인터페이스에 학적 관련 데이터 추가
+interface Profile { id: string; name: string; student_id: string; session: string; generation: string | null; major: string | null; phone: string | null; role: string; position: string | null; profile_image_url?: string; college?: string | null; grade?: string | null; enrollment_status?: string | null; }
 interface Post { id: number; type: string; title: string; created_at: string; }
 interface MyTeam { id: number; name: string; image_url: string | null; role: string; } 
 
@@ -17,14 +18,18 @@ export default function IntegratedProfilePage() {
   const [myTeams, setMyTeams] = useState<MyTeam[]>([]); 
   
   const [isEditing, setIsEditing] = useState(false);
-  // 🌟 이름 수정 상태 추가
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
-  const [editMajor, setEditMajor] = useState('');
   const [editPosition, setEditPosition] = useState('');
   const [editSession, setEditSession] = useState(''); 
-  const [isSubmitting, setIsSubmitting] = useState(false);
   
+  // 🌟 추가된 학적 상태 폼 관리
+  const [editCollege, setEditCollege] = useState('');
+  const [editMajor, setEditMajor] = useState('');
+  const [editGrade, setEditGrade] = useState('');
+  const [editEnrollmentStatus, setEditEnrollmentStatus] = useState('재학');
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -49,11 +54,16 @@ export default function IntegratedProfilePage() {
     const { data: profileData } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
     if (profileData) {
       setProfile(profileData);
-      setEditName(profileData.name || ''); // 🌟 초기 이름 세팅
+      setEditName(profileData.name || ''); 
       setEditPhone(profileData.phone || '');
-      setEditMajor(profileData.major || '');
       setEditPosition(profileData.position || '미정');
       setEditSession(profileData.session || '미정'); 
+      
+      // 🌟 DB에서 가져온 학적 상태 폼에 세팅
+      setEditCollege(profileData.college || '');
+      setEditMajor(profileData.major || '');
+      setEditGrade(profileData.grade || '');
+      setEditEnrollmentStatus(profileData.enrollment_status || '재학');
 
       const { data: postData } = await supabase.from('posts').select('id, type, title, created_at').eq('author_name', profileData.name).order('created_at', { ascending: false });
       if (postData) setMyPosts(postData);
@@ -79,14 +89,17 @@ export default function IntegratedProfilePage() {
 
   const handleUpdateProfile = async () => {
     if (!profile) return;
-    if (!editName.trim()) return alert('이름을 비울 수 없습니다.'); // 🌟 이름 필수값 확인
+    if (!editName.trim()) return alert('이름을 비울 수 없습니다.'); 
     
     setIsSubmitting(true);
-    // 🌟 이름(name) 정보도 함께 업데이트
+    // 🌟 추가된 데이터들을 함께 업데이트
     const { error } = await supabase.from('profiles').update({ 
       name: editName, 
       phone: editPhone, 
+      college: editCollege,
       major: editMajor, 
+      grade: editGrade,
+      enrollment_status: editEnrollmentStatus,
       position: editPosition, 
       session: editSession 
     }).eq('id', profile.id);
@@ -187,15 +200,30 @@ export default function IntegratedProfilePage() {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 relative z-10">
+            {/* 🌟 정보를 2x2 그리드로 깔끔하게 정리 */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 relative z-10">
               <div className="flex flex-col gap-1 bg-bg-base border border-border-base p-4 rounded-2xl transition-colors">
                 <div className="flex items-center gap-2 text-text-muted text-xs font-bold uppercase tracking-wider mb-1"><Music className="w-3.5 h-3.5" /> 포지션</div>
                 <span className="font-bold text-text-base text-sm">{profile.position || '미정'}</span>
               </div>
+              
               <div className="flex flex-col gap-1 bg-bg-base border border-border-base p-4 rounded-2xl transition-colors">
-                <div className="flex items-center gap-2 text-text-muted text-xs font-bold uppercase tracking-wider mb-1"><BookOpen className="w-3.5 h-3.5" /> 학과/부서</div>
-                <span className="font-bold text-text-base text-sm line-clamp-1">{profile.major || '입력 안 됨'}</span>
+                <div className="flex items-center gap-2 text-text-muted text-xs font-bold uppercase tracking-wider mb-1"><GraduationCap className="w-3.5 h-3.5" /> 학적 상태</div>
+                <span className="font-bold text-text-base text-sm">
+                  <span className={`${profile.enrollment_status === '재학' ? 'text-emerald-500' : 'text-amber-500'}`}>
+                    {profile.enrollment_status || '재학'}
+                  </span>
+                  {profile.grade ? ` (${profile.grade}학년)` : ''}
+                </span>
               </div>
+
+              <div className="flex flex-col gap-1 bg-bg-base border border-border-base p-4 rounded-2xl transition-colors">
+                <div className="flex items-center gap-2 text-text-muted text-xs font-bold uppercase tracking-wider mb-1"><BookOpen className="w-3.5 h-3.5" /> 소속 정보</div>
+                <span className="font-bold text-text-base text-sm line-clamp-1">
+                  {profile.college ? `${profile.college} ` : ''}{profile.major || '입력 안 됨'}
+                </span>
+              </div>
+
               <div className="flex flex-col gap-1 bg-bg-base border border-border-base p-4 rounded-2xl transition-colors">
                 <div className="flex items-center gap-2 text-text-muted text-xs font-bold uppercase tracking-wider mb-1"><Phone className="w-3.5 h-3.5" /> 연락처</div>
                 <span className="font-bold text-text-base text-sm">{profile.phone || '입력 안 됨'}</span>
@@ -341,7 +369,8 @@ export default function IntegratedProfilePage() {
         <Dialog as="div" className="relative z-50" onClose={() => setIsEditing(false)}>
           <div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm transition-opacity" />
           <div className="fixed inset-0 flex items-center justify-center p-4">
-            <Dialog.Panel className="w-full max-w-md rounded-3xl bg-bg-surface border border-border-base p-6 lg:p-8 text-left shadow-2xl transition-colors">
+            {/* 화면 높이를 넘어갈 수 있으므로 max-h와 overflow 추가 */}
+            <Dialog.Panel className="w-full max-w-md rounded-3xl bg-bg-surface border border-border-base p-6 lg:p-8 text-left shadow-2xl transition-colors max-h-[90vh] overflow-y-auto custom-scrollbar">
               <div className="flex justify-between items-center mb-8">
                 <Dialog.Title className="text-xl font-bold text-text-base flex items-center gap-2">
                   <Settings className="w-5 h-5 text-primary" /> 프로필 수정
@@ -350,11 +379,48 @@ export default function IntegratedProfilePage() {
               </div>
               
               <div className="space-y-5">
-                {/* 🌟 이름 수정란 추가 */}
                 <div>
                   <label className="text-xs font-bold text-text-muted uppercase mb-1.5 block tracking-wider">이름</label>
                   <input type="text" value={editName} onChange={e => setEditName(e.target.value)} placeholder="실명 입력" className="w-full bg-bg-base border border-border-base rounded-xl p-3.5 text-text-base focus:border-primary outline-none transition-colors" />
                 </div>
+
+                {/* 🌟 학적 정보 폼 추가 */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-text-muted uppercase mb-1.5 block tracking-wider">재학/휴학</label>
+                    <select value={editEnrollmentStatus} onChange={e => setEditEnrollmentStatus(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-3.5 text-text-base focus:border-primary outline-none transition-colors">
+                      <option value="재학">재학</option>
+                      <option value="휴학">휴학</option>
+                      <option value="졸업">졸업</option>
+                      <option value="수료">수료</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-text-muted uppercase mb-1.5 block tracking-wider">학년</label>
+                    <select value={editGrade} onChange={e => setEditGrade(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-3.5 text-text-base focus:border-primary outline-none transition-colors">
+                      <option value="">선택 안함</option>
+                      <option value="1">1학년</option>
+                      <option value="2">2학년</option>
+                      <option value="3">3학년</option>
+                      <option value="4">4학년</option>
+                      <option value="5">5학년(초과)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-text-muted uppercase mb-1.5 block tracking-wider">단과대학</label>
+                    <input type="text" value={editCollege} onChange={e => setEditCollege(e.target.value)} placeholder="예: 공과대학" className="w-full bg-bg-base border border-border-base rounded-xl p-3.5 text-text-base focus:border-primary outline-none transition-colors" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-text-muted uppercase mb-1.5 block tracking-wider">학과 / 부서</label>
+                    <input type="text" value={editMajor} onChange={e => setEditMajor(e.target.value)} placeholder="예: 컴퓨터공학과" className="w-full bg-bg-base border border-border-base rounded-xl p-3.5 text-text-base focus:border-primary outline-none transition-colors" />
+                  </div>
+                </div>
+
+                <hr className="border-border-base my-2" />
+
                 <div>
                   <label className="text-xs font-bold text-text-muted uppercase mb-1.5 block tracking-wider">주 세션</label>
                   <select value={editSession} onChange={e => setEditSession(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-3.5 text-text-base focus:border-primary outline-none transition-colors">
@@ -371,10 +437,6 @@ export default function IntegratedProfilePage() {
                 <div>
                   <label className="text-xs font-bold text-text-muted uppercase mb-1.5 block tracking-wider">세부 포지션 (선택)</label>
                   <input type="text" value={editPosition} onChange={e => setEditPosition(e.target.value)} placeholder="예: 메인 보컬, 퍼스트 기타" className="w-full bg-bg-base border border-border-base rounded-xl p-3.5 text-text-base focus:border-primary outline-none transition-colors" />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-text-muted uppercase mb-1.5 block tracking-wider">학과 / 부서</label>
-                  <input type="text" value={editMajor} onChange={e => setEditMajor(e.target.value)} placeholder="예: 컴퓨터공학과" className="w-full bg-bg-base border border-border-base rounded-xl p-3.5 text-text-base focus:border-primary outline-none transition-colors" />
                 </div>
                 <div>
                   <label className="text-xs font-bold text-text-muted uppercase mb-1.5 block tracking-wider">전화번호</label>

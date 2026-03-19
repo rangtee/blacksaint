@@ -4,9 +4,16 @@ import { Plus, Users, ChevronLeft, MoreVertical, Edit2, Shield, UserMinus, UserP
 import { Dialog, Transition } from '@headlessui/react';
 import { supabase } from '../../lib/supabase';
 
-// --- 인터페이스 정의 ---
+// 🌟 15개 이상의 팀 컬러 팔레트 정의
+const TEAM_COLORS = [
+  '#EF4444', '#F97316', '#F59E0B', '#EAB308', '#84CC16', '#22C55E',
+  '#10B981', '#14B8A6', '#06B6D4', '#0EA5E9', '#3B82F6', '#6366F1',
+  '#8B5CF6', '#A855F7', '#D946EF', '#EC4899', '#F43F5E', '#94A3B8'
+];
+
+// --- 인터페이스 정의 (team_color 추가) ---
 interface TeamFolder { id: number; name: string; }
-interface Team { id: number; name: string; bio: string | null; image_url: string | null; folder_id: number | null; memberCount?: number; }
+interface Team { id: number; name: string; bio: string | null; image_url: string | null; folder_id: number | null; memberCount?: number; team_color?: string; }
 interface Song { id: number; team_id: number; title: string; artist: string; duration_seconds: number; sort_order?: number; }
 interface TeamMember { id: number; user_id: string; role: string; profiles: { name: string; session: string; student_id: string; }; }
 interface Profile { id: string; name: string; session: string; student_id: string; }
@@ -33,12 +40,15 @@ export default function TeamManagementPage() {
   
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
 
-  // 폼 상태
+  // 폼 상태 (색상 상태 추가)
   const [newTeamName, setNewTeamName] = useState('');
   const [newTeamBio, setNewTeamBio] = useState('');
+  const [newTeamColor, setNewTeamColor] = useState(TEAM_COLORS[10]); // 기본 파란색
+  
   const [editTeamName, setEditTeamName] = useState('');
   const [editTeamBio, setEditTeamBio] = useState('');
   const [editTeamFolderId, setEditTeamFolderId] = useState<string>('');
+  const [editTeamColor, setEditTeamColor] = useState('');
   
   const [newSongTitle, setNewSongTitle] = useState('');
   const [newSongArtist, setNewSongArtist] = useState('');
@@ -87,7 +97,6 @@ export default function TeamManagementPage() {
     init();
   }, []);
 
-  // 🌟 권한 제어 변수들
   const isPresident = globalRole === 'president' || globalRole === 'admin';
   const isGlobalLeader = globalRole === 'leader';
   const isTeamMember = members.some(m => m.user_id === currentUser?.id);
@@ -114,7 +123,6 @@ export default function TeamManagementPage() {
     if (data) setMembers(data as unknown as TeamMember[]);
   };
 
-  // 🌟 곡 목록을 가져올 때 'sort_order' 기준으로 정렬하도록 수정
   const fetchSongs = async (teamId: number) => {
     const { data } = await supabase.from('team_songs').select('*').eq('team_id', teamId).order('sort_order', { ascending: true }).order('created_at', { ascending: true });
     if (data) setSongs(data as Song[]);
@@ -147,38 +155,57 @@ export default function TeamManagementPage() {
     }
   };
 
+  // 🌟 팀 수정 모달 열 때 현재 색상 불러오기
   const handleOpenEditTeam = () => {
     if (selectedTeam) {
       setEditTeamName(selectedTeam.name);
       setEditTeamBio(selectedTeam.bio || '');
       setEditTeamFolderId(selectedTeam.folder_id ? selectedTeam.folder_id.toString() : '');
+      setEditTeamColor(selectedTeam.team_color || TEAM_COLORS[10]);
       setIsEditTeamModalOpen(true);
     }
   };
 
+  // 🌟 팀 수정 시 색상도 함께 업데이트
   const handleUpdateTeam = async () => {
     if (!editTeamName.trim() || !selectedTeam) return;
     const folderIdToSave = editTeamFolderId === '' ? null : parseInt(editTeamFolderId);
     
-    const { error } = await supabase.from('teams').update({ name: editTeamName, bio: editTeamBio, folder_id: folderIdToSave }).eq('id', selectedTeam.id);
+    const { error } = await supabase.from('teams').update({ 
+      name: editTeamName, 
+      bio: editTeamBio, 
+      folder_id: folderIdToSave,
+      team_color: editTeamColor 
+    }).eq('id', selectedTeam.id);
+
     if (error) alert('수정 실패: ' + error.message);
     else { 
       setIsEditTeamModalOpen(false); 
       fetchTeams(); 
-      setSelectedTeam({ ...selectedTeam, name: editTeamName, bio: editTeamBio, folder_id: folderIdToSave }); 
+      setSelectedTeam({ ...selectedTeam, name: editTeamName, bio: editTeamBio, folder_id: folderIdToSave, team_color: editTeamColor }); 
     }
   };
 
+  // 🌟 팀 생성 시 색상도 함께 저장
   const handleCreateTeam = async () => {
     if (!newTeamName.trim()) return;
-    const { data: newTeam, error } = await supabase.from('teams').insert([{ name: newTeamName, bio: newTeamBio }]).select().single();
+    const { data: newTeam, error } = await supabase.from('teams').insert([{ 
+      name: newTeamName, 
+      bio: newTeamBio,
+      team_color: newTeamColor 
+    }]).select().single();
+
     if (error) return alert('팀 생성 실패: ' + error.message);
 
     if (newTeam && currentUser) {
       await supabase.from('team_members').insert([{ team_id: newTeam.id, user_id: currentUser.id, role: 'Leader' }]);
     }
     
-    setIsCreateModalOpen(false); setNewTeamName(''); setNewTeamBio(''); fetchTeams();
+    setIsCreateModalOpen(false); 
+    setNewTeamName(''); 
+    setNewTeamBio(''); 
+    setNewTeamColor(TEAM_COLORS[10]); 
+    fetchTeams();
   };
 
   const handleOpenInviteModal = async () => {
@@ -232,11 +259,10 @@ export default function TeamManagementPage() {
     } finally { setIsUploading(false); }
   };
 
-  // 🌟 새 곡을 추가할 때 현재 리스트의 제일 마지막 순서(sort_order)로 밀어 넣습니다.
   const handleAddSong = async () => {
     if (!newSongTitle.trim() || !newSongArtist.trim() || !selectedTeam) return;
     const totalSeconds = (parseInt(newSongMinutes || '0') * 60) + parseInt(newSongSeconds || '0');
-    const newSortOrder = songs.length; // 배열 길이 = 마지막 순번
+    const newSortOrder = songs.length;
 
     await supabase.from('team_songs').insert([{ 
       team_id: selectedTeam.id, 
@@ -254,7 +280,6 @@ export default function TeamManagementPage() {
     if (selectedTeam) fetchSongs(selectedTeam.id);
   };
 
-  // 🌟 곡 순서 변경(위/아래 이동) 함수
   const handleMoveSong = async (index: number, direction: 'up' | 'down') => {
     if (direction === 'up' && index === 0) return;
     if (direction === 'down' && index === songs.length - 1) return;
@@ -262,13 +287,11 @@ export default function TeamManagementPage() {
     const newSongs = [...songs];
     const swapIndex = direction === 'up' ? index - 1 : index + 1;
 
-    // 로컬 상태(배열)에서 순서 바꾸기 (빠른 화면 전환용)
     const temp = newSongs[index];
     newSongs[index] = newSongs[swapIndex];
     newSongs[swapIndex] = temp;
     setSongs(newSongs);
 
-    // DB에 새로운 순서 업데이트 (변경된 두 곡만 업데이트해도 되지만 안전하게 전체 인덱스 재정렬)
     for (let i = 0; i < newSongs.length; i++) {
       await supabase.from('team_songs').update({ sort_order: i }).eq('id', newSongs[i].id);
     }
@@ -339,8 +362,12 @@ export default function TeamManagementPage() {
                         <img src={team.image_url || 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=600&auto=format&fit=crop'} alt={team.name} className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 bg-slate-200 dark:bg-slate-800" />
                         <div className="absolute inset-0 bg-linear-to-t from-black/90 via-black/40 to-transparent opacity-90 group-hover:opacity-80 transition-opacity" />
                         <div className="absolute inset-x-0 bottom-0 p-4 flex flex-col justify-end">
-                          <h3 className="text-lg font-black text-white mb-1 leading-tight line-clamp-1">{team.name}</h3>
-                          <div className="flex items-center gap-1.5 text-xs text-white/90 font-medium bg-black/30 w-fit px-2 py-1 rounded-md backdrop-blur-sm border border-white/20 transition-colors">
+                          {/* 🌟 리스트에서도 팀 컬러 표시 */}
+                          <div className="flex items-center gap-2 mb-1">
+                            <div className="w-3 h-3 rounded-full shadow-sm border border-white/20 shrink-0" style={{ backgroundColor: team.team_color || '#3B82F6' }} />
+                            <h3 className="text-lg font-black text-white leading-tight line-clamp-1">{team.name}</h3>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs text-white/90 font-medium bg-black/30 w-fit px-2 py-1 rounded-md backdrop-blur-sm border border-white/20 transition-colors mt-1">
                             <Users className="w-3 h-3 text-primary" /> {team.memberCount}명
                           </div>
                         </div>
@@ -361,8 +388,12 @@ export default function TeamManagementPage() {
                         <img src={team.image_url || 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=600&auto=format&fit=crop'} alt={team.name} className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 bg-slate-200 dark:bg-slate-800" />
                         <div className="absolute inset-0 bg-linear-to-t from-black/90 via-black/40 to-transparent opacity-90 group-hover:opacity-80 transition-opacity" />
                         <div className="absolute inset-x-0 bottom-0 p-4 flex flex-col justify-end">
-                          <h3 className="text-lg font-black text-white mb-1 leading-tight line-clamp-1">{team.name}</h3>
-                          <div className="flex items-center gap-1.5 text-xs text-white/90 font-medium bg-black/30 w-fit px-2 py-1 rounded-md backdrop-blur-sm border border-white/20 transition-colors">
+                          {/* 🌟 리스트에서도 팀 컬러 표시 */}
+                          <div className="flex items-center gap-2 mb-1">
+                            <div className="w-3 h-3 rounded-full shadow-sm border border-white/20 shrink-0" style={{ backgroundColor: team.team_color || '#3B82F6' }} />
+                            <h3 className="text-lg font-black text-white leading-tight line-clamp-1">{team.name}</h3>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs text-white/90 font-medium bg-black/30 w-fit px-2 py-1 rounded-md backdrop-blur-sm border border-white/20 transition-colors mt-1">
                             <Users className="w-3 h-3 text-primary" /> {team.memberCount}명
                           </div>
                         </div>
@@ -400,7 +431,11 @@ export default function TeamManagementPage() {
                 <div className="p-6 lg:p-8 relative z-10 -mt-8">
                   <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                     <div>
-                      <h1 className="text-3xl font-black text-text-base mb-2 drop-shadow-md">{selectedTeam.name}</h1>
+                      {/* 🌟 타이틀 옆에 고유 색상 뱃지 표시 */}
+                      <div className="flex items-center gap-3 mb-2">
+                        <div className="w-5 h-5 rounded-full shadow-md border-2 border-white dark:border-slate-900 shrink-0" style={{ backgroundColor: selectedTeam.team_color || '#3B82F6' }} />
+                        <h1 className="text-3xl font-black text-text-base drop-shadow-md">{selectedTeam.name}</h1>
+                      </div>
                       <p className="text-text-muted flex items-center gap-2"><Info className="w-4 h-4 text-primary" /> {selectedTeam.bio || '등록된 팀 소개가 없습니다.'}</p>
                     </div>
                     <div className="flex flex-wrap gap-3 w-full md:w-auto">
@@ -454,7 +489,6 @@ export default function TeamManagementPage() {
                           </div>
                         </div>
                         
-                        {/* 🌟 순서 변경(위/아래) & 곡 삭제 버튼 영역 */}
                         {canAddContent && (
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button onClick={() => handleMoveSong(idx, 'up')} disabled={idx === 0} className="p-1.5 text-text-muted hover:text-text-base hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-lg transition disabled:opacity-30 disabled:hover:bg-transparent">
@@ -514,6 +548,22 @@ export default function TeamManagementPage() {
       <Transition appear show={isCreateFolderModalOpen} as={Fragment}><Dialog as="div" className="relative z-50" onClose={() => setIsCreateFolderModalOpen(false)}><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0"><div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm" /></Transition.Child><div className="fixed inset-0 flex items-center justify-center p-4"><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"><Dialog.Panel className="w-full max-w-sm rounded-3xl bg-bg-surface border border-border-base p-6 shadow-2xl transition-colors"><Dialog.Title className="text-xl font-bold text-text-base mb-6">새 폴더 생성</Dialog.Title><div className="space-y-5"><div><label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">폴더 이름</label><input type="text" placeholder="예: 1학기 공연조" value={newFolderName} onChange={e => setNewFolderName(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors" /></div></div><div className="flex gap-3 mt-8"><button onClick={() => setIsCreateFolderModalOpen(false)} className="flex-1 py-3.5 bg-bg-base hover:brightness-95 dark:hover:brightness-110 border border-border-base text-text-base font-bold rounded-xl transition-colors">취소</button><button onClick={handleCreateFolder} className="flex-1 py-3.5 bg-primary hover:brightness-110 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition">만들기</button></div></Dialog.Panel></Transition.Child></div></Dialog></Transition>
 
       <Transition appear show={isEditTeamModalOpen} as={Fragment}><Dialog as="div" className="relative z-50" onClose={() => setIsEditTeamModalOpen(false)}><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0"><div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm" /></Transition.Child><div className="fixed inset-0 flex items-center justify-center p-4"><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"><Dialog.Panel className="w-full max-w-md rounded-3xl bg-bg-surface border border-border-base p-6 shadow-2xl transition-colors"><div className="flex justify-between items-center mb-6"><Dialog.Title className="text-xl font-bold text-text-base">팀 정보 수정</Dialog.Title><button onClick={() => setIsEditTeamModalOpen(false)} className="text-text-muted hover:text-text-base transition-colors"><X className="w-5 h-5"/></button></div><div className="space-y-5"><div><label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">팀 이름</label><input type="text" value={editTeamName} onChange={e => setEditTeamName(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors" /></div><div><label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">팀 소개</label><textarea rows={3} value={editTeamBio} onChange={e => setEditTeamBio(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors resize-none custom-scrollbar" /></div>
+        
+        {/* 🌟 정보 수정 시 컬러 선택 UI 추가 */}
+        <div>
+          <label className="text-xs font-bold text-text-muted uppercase mb-2 block">팀 고유 색상</label>
+          <div className="flex flex-wrap gap-2">
+            {TEAM_COLORS.map(color => (
+              <button
+                key={color}
+                onClick={() => setEditTeamColor(color)}
+                className={`w-8 h-8 rounded-full border-2 transition-transform hover:scale-110 shadow-sm ${editTeamColor === color ? 'border-text-base scale-110 shadow-md' : 'border-transparent'}`}
+                style={{ backgroundColor: color }}
+              />
+            ))}
+          </div>
+        </div>
+
         {isPresident && (
           <div>
             <label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">소속 폴더 (관리자 전용)</label>
@@ -525,7 +575,24 @@ export default function TeamManagementPage() {
         )}
         </div><button onClick={handleUpdateTeam} className="w-full mt-8 py-3.5 bg-primary hover:brightness-110 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition">수정 완료</button></Dialog.Panel></Transition.Child></div></Dialog></Transition>
 
-      <Transition appear show={isCreateModalOpen} as={Fragment}><Dialog as="div" className="relative z-50" onClose={() => setIsCreateModalOpen(false)}><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0"><div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm" /></Transition.Child><div className="fixed inset-0 flex items-center justify-center p-4"><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"><Dialog.Panel className="w-full max-w-md rounded-3xl bg-bg-surface border border-border-base p-6 shadow-2xl transition-colors"><Dialog.Title className="text-xl font-bold text-text-base mb-6">새 팀 생성</Dialog.Title><div className="space-y-5"><div><label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">팀 이름</label><input type="text" value={newTeamName} onChange={e => setNewTeamName(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors" /></div><div><label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">팀 소개</label><textarea rows={3} value={newTeamBio} onChange={e => setNewTeamBio(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors resize-none custom-scrollbar" /></div></div><div className="flex gap-3 mt-8"><button onClick={() => setIsCreateModalOpen(false)} className="flex-1 py-3.5 bg-bg-base hover:brightness-95 dark:hover:brightness-110 border border-border-base text-text-base font-bold rounded-xl transition-colors">취소</button><button onClick={handleCreateTeam} className="flex-1 py-3.5 bg-primary hover:brightness-110 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition">생성하기</button></div></Dialog.Panel></Transition.Child></div></Dialog></Transition>
+      <Transition appear show={isCreateModalOpen} as={Fragment}><Dialog as="div" className="relative z-50" onClose={() => setIsCreateModalOpen(false)}><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0"><div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm" /></Transition.Child><div className="fixed inset-0 flex items-center justify-center p-4"><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"><Dialog.Panel className="w-full max-w-md rounded-3xl bg-bg-surface border border-border-base p-6 shadow-2xl transition-colors"><Dialog.Title className="text-xl font-bold text-text-base mb-6">새 팀 생성</Dialog.Title><div className="space-y-5"><div><label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">팀 이름</label><input type="text" value={newTeamName} onChange={e => setNewTeamName(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors" /></div><div><label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">팀 소개</label><textarea rows={3} value={newTeamBio} onChange={e => setNewTeamBio(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors resize-none custom-scrollbar" /></div>
+        
+        {/* 🌟 팀 생성 시 컬러 선택 UI 추가 */}
+        <div>
+          <label className="text-xs font-bold text-text-muted uppercase mb-2 block">팀 고유 색상</label>
+          <div className="flex flex-wrap gap-2">
+            {TEAM_COLORS.map(color => (
+              <button
+                key={color}
+                onClick={() => setNewTeamColor(color)}
+                className={`w-8 h-8 rounded-full border-2 transition-transform hover:scale-110 shadow-sm ${newTeamColor === color ? 'border-text-base scale-110 shadow-md' : 'border-transparent'}`}
+                style={{ backgroundColor: color }}
+              />
+            ))}
+          </div>
+        </div>
+
+        </div><div className="flex gap-3 mt-8"><button onClick={() => setIsCreateModalOpen(false)} className="flex-1 py-3.5 bg-bg-base hover:brightness-95 dark:hover:brightness-110 border border-border-base text-text-base font-bold rounded-xl transition-colors">취소</button><button onClick={handleCreateTeam} className="flex-1 py-3.5 bg-primary hover:brightness-110 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition">생성하기</button></div></Dialog.Panel></Transition.Child></div></Dialog></Transition>
       
       <Transition appear show={isAddSongModalOpen} as={Fragment}><Dialog as="div" className="relative z-50" onClose={() => setIsAddSongModalOpen(false)}><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0"><div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm" /></Transition.Child><div className="fixed inset-0 flex items-center justify-center p-4"><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"><Dialog.Panel className="w-full max-w-sm rounded-3xl bg-bg-surface border border-border-base p-6 shadow-2xl transition-colors"><div className="flex justify-between items-center mb-6"><Dialog.Title className="text-lg font-bold text-text-base flex items-center gap-2"><Music className="w-5 h-5 text-primary" /> 합주곡 추가</Dialog.Title><button onClick={() => setIsAddSongModalOpen(false)} className="text-text-muted hover:text-text-base transition-colors"><X className="w-5 h-5"/></button></div><div className="space-y-4"><div><label className="text-[10px] font-bold text-text-muted uppercase mb-1 block">아티스트</label><input type="text" value={newSongArtist} onChange={e => setNewSongArtist(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors" /></div><div><label className="text-[10px] font-bold text-text-muted uppercase mb-1 block">곡 제목</label><input type="text" value={newSongTitle} onChange={e => setNewSongTitle(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors" /></div><div><label className="text-[10px] font-bold text-text-muted uppercase mb-1 block">곡 길이</label><div className="flex items-center gap-3"><div className="flex-1 flex items-center bg-bg-base border border-border-base rounded-xl pr-4 transition-colors"><input type="number" value={newSongMinutes} onChange={e => setNewSongMinutes(e.target.value)} className="w-full bg-transparent p-4 text-text-base outline-none text-right" /><span className="text-text-muted font-bold ml-1">분</span></div><div className="flex-1 flex items-center bg-bg-base border border-border-base rounded-xl pr-4 transition-colors"><input type="number" value={newSongSeconds} onChange={e => setNewSongSeconds(e.target.value)} className="w-full bg-transparent p-4 text-text-base outline-none text-right" /><span className="text-text-muted font-bold ml-1">초</span></div></div></div></div><button onClick={handleAddSong} className="w-full py-4 mt-8 bg-primary hover:brightness-110 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition">추가하기</button></Dialog.Panel></Transition.Child></div></Dialog></Transition>
       

@@ -3,8 +3,10 @@ import React, { useState, useEffect, Fragment, useRef } from 'react';
 import { Users, Download, UserPlus, Search, Shield, ChevronDown, FileSpreadsheet, ToggleLeft, ToggleRight, HardDrive, Image as ImageIcon, Trash2, FolderTree, Folder, Edit2, LayoutList, Plus, X as CloseIcon, UploadCloud, FolderPlus, Loader2 } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 import { supabase } from '../../lib/supabase';
+import * as XLSX from 'xlsx'; // 🌟 엑셀 라이브러리 불러오기
 
-interface Profile { id: string; name: string; student_id: string; session: string; role: string; can_reserve: boolean; can_post: boolean; phone?: string; team_names?: string[]; college?: string; major?: string; grade?: string; }
+// 🌟 프로필 인터페이스 확장 (재학/휴학 상태 추가)[cite: 5]
+interface Profile { id: string; name: string; student_id: string; session: string; role: string; can_reserve: boolean; can_post: boolean; phone?: string; team_names?: string[]; college?: string; major?: string; grade?: string; enrollment_status?: string; }
 interface BoardCategory { id: number; name: string; parent_id: number | null; is_admin_only: boolean; }
 
 export default function AdminPage() {
@@ -43,7 +45,8 @@ export default function AdminPage() {
 
   const fetchData = async () => {
     setIsLoading(true);
-    const { data: pData } = await supabase.from('profiles').select(`id, name, student_id, phone, session, role, can_reserve, can_post, college, major, grade, team_members ( teams ( name ) )`).order('name');
+    // 🌟 profiles 테이블에서 enrollment_status 도 함께 가져옴[cite: 5]
+    const { data: pData } = await supabase.from('profiles').select(`id, name, student_id, phone, session, role, can_reserve, can_post, college, major, grade, enrollment_status, team_members ( teams ( name ) )`).order('name');
     if (pData) setProfiles(pData.map((p: any) => ({ ...p, team_names: p.team_members?.map((tm: any) => tm.teams?.name).filter(Boolean) || [] })));
     
     const { data: fData } = await supabase.from('team_folders').select('id, name, created_at, teams(count)').order('created_at', { ascending: false });
@@ -122,7 +125,7 @@ export default function AdminPage() {
 
       if (authData.user) {
         const { error: profileError } = await supabase.from('profiles').upsert({
-          id: authData.user.id, name: newName, student_id: newStudentId, phone: newPhone, role: newRole, session: '미정', can_reserve: true, can_post: true
+          id: authData.user.id, name: newName, student_id: newStudentId, phone: newPhone, role: newRole, session: '미정', can_reserve: true, can_post: true, enrollment_status: '재학'
         });
         if (profileError) throw profileError;
         alert(`[${newName}] 부원이 명단에 성공적으로 추가되었습니다!\n\n아이디: ${newStudentId}\n초기 비밀번호: ${newPhone}`);
@@ -133,32 +136,13 @@ export default function AdminPage() {
     } finally { setIsSubmitting(false); }
   };
 
-  // CSV 파싱 로직
-  const parseCSV = (text: string) => {
-    const lines = text.split('\n').filter(line => line.trim() !== '');
-    const result = [];
-    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-    
-    for (let i = 1; i < lines.length; i++) {
-      const currentLine = lines[i].split(',').map(val => val.trim().replace(/^"|"$/g, ''));
-      if (currentLine.length >= 6) {
-        const obj: any = {};
-        headers.forEach((header, index) => {
-          obj[header] = currentLine[index] || '';
-        });
-        result.push(obj);
-      }
-    }
-    return result;
-  };
-
-  // 일괄 등록 (CSV 업로드 처리)
+  // 🌟 일괄 등록 (.xlsx 엑셀 파일 업로드 처리)[cite: 5]
   const handleBatchUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
     
-    if (!file.name.endsWith('.csv')) {
-      alert('CSV 형식의 파일만 업로드 가능합니다. (엑셀에서 "CSV (쉼표로 분리)" 형식으로 저장해주세요.)');
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+      alert('엑셀(.xlsx, .xls) 형식의 파일만 업로드 가능합니다.');
       return;
     }
 
@@ -169,103 +153,132 @@ export default function AdminPage() {
 
     const reader = new FileReader();
     reader.onload = async (event) => {
-      const csvData = event.target?.result as string;
-      const parsedData = parseCSV(csvData);
-      
-      if (parsedData.length === 0) {
-        alert('올바른 데이터를 찾을 수 없습니다. 양식을 확인해주세요.');
-        return;
-      }
-
-      setUploadProgress({ current: 0, total: parsedData.length, isUploading: true });
-      let successCount = 0;
-      let failCount = 0;
-
-      for (let i = 0; i < parsedData.length; i++) {
-        const row = parsedData[i];
-        const name = row['성명'];
-        const college = row['단대'];
-        const grade = row['학년'];
-        const phone = row['연락처']?.replace(/-/g, ''); 
-        const major = row['학과(부)'];
-        const studentId = row['학번'];
-
-        if (!name || !studentId || !phone) {
-          console.warn(`행 무시됨 (필수값 누락): ${JSON.stringify(row)}`);
-          failCount++;
-          continue;
+      try {
+        const data = new Uint8Array(event.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        
+        // 엑셀 시트를 JSON 배열로 변환
+        const parsedData = XLSX.utils.sheet_to_json(worksheet) as any[];
+        
+        if (parsedData.length === 0) {
+          alert('올바른 데이터를 찾을 수 없습니다. 엑셀 양식을 확인해주세요.');
+          return;
         }
 
-        const pseudoEmail = `${studentId}@bandon.com`;
-        
-        try {
-          const { data: authData, error: authError } = await supabase.auth.signUp({
-            email: pseudoEmail,
-            password: phone,
-          });
+        setUploadProgress({ current: 0, total: parsedData.length, isUploading: true });
+        let successCount = 0;
+        let failCount = 0;
 
-          if (authError) {
-            console.error(`[${name}] 계정 생성 실패:`, authError.message);
+        for (let i = 0; i < parsedData.length; i++) {
+          const row = parsedData[i];
+          const name = String(row['성명'] || '').trim();
+          const college = String(row['단대'] || '').trim();
+          const major = String(row['학과(부)'] || '').trim();
+          const studentId = String(row['학번'] || '').trim();
+          const grade = String(row['학년'] || '').trim();
+          const phone = String(row['연락처'] || '').replace(/-/g, '').trim(); 
+          const enrollmentStatus = String(row['재학/휴학'] || '재학').trim(); 
+
+          if (!name || !studentId || !phone) {
+            console.warn(`행 무시됨 (필수값 누락): ${JSON.stringify(row)}`);
             failCount++;
-          } else if (authData.user) {
-            const { error: profileError } = await supabase.from('profiles').upsert({
-              id: authData.user.id,
-              name: name,
-              student_id: studentId,
-              phone: phone,
-              college: college,
-              major: major,
-              grade: grade,
-              role: 'member', 
-              session: '미정',
-              can_reserve: true,
-              can_post: true
+            continue;
+          }
+
+          const pseudoEmail = `${studentId}@bandon.com`;
+          
+          try {
+            const { data: authData, error: authError } = await supabase.auth.signUp({
+              email: pseudoEmail,
+              password: phone,
             });
 
-            if (profileError) throw profileError;
-            successCount++;
-          }
-        } catch (err) {
-          console.error(`[${name}] 프로필 저장 실패:`, err);
-          failCount++;
-        }
-        
-        setUploadProgress(prev => ({ ...prev, current: prev.current + 1 }));
-      }
+            if (authError) {
+              console.error(`[${name}] 계정 생성 실패:`, authError.message);
+              failCount++;
+            } else if (authData.user) {
+              const { error: profileError } = await supabase.from('profiles').upsert({
+                id: authData.user.id,
+                name: name,
+                student_id: studentId,
+                phone: phone,
+                college: college,
+                major: major,
+                grade: grade,
+                enrollment_status: enrollmentStatus, // 🌟 재학/휴학 반영
+                role: 'member', 
+                session: '미정',
+                can_reserve: true,
+                can_post: true
+              });
 
-      alert(`일괄 등록이 완료되었습니다!\n✅ 성공: ${successCount}명\n❌ 실패/중복: ${failCount}명`);
-      setUploadProgress({ current: 0, total: 0, isUploading: false });
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      setIsBatchOpen(false);
-      fetchData();
+              if (profileError) throw profileError;
+              successCount++;
+            }
+          } catch (err) {
+            console.error(`[${name}] 프로필 저장 실패:`, err);
+            failCount++;
+          }
+          
+          setUploadProgress(prev => ({ ...prev, current: prev.current + 1 }));
+        }
+
+        alert(`일괄 등록이 완료되었습니다!\n✅ 성공: ${successCount}명\n❌ 실패/중복: ${failCount}명`);
+      } catch (err) {
+        alert('파일을 읽는 중 오류가 발생했습니다. 파일이 손상되었거나 올바른 엑셀이 아닙니다.');
+      } finally {
+        setUploadProgress({ current: 0, total: 0, isUploading: false });
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        setIsBatchOpen(false);
+        fetchData();
+      }
     };
 
-    reader.readAsText(file, 'euc-kr');
+    reader.readAsArrayBuffer(file);
   };
 
+  // 🌟 지정된 양식에 맞춰 XLSX 다운로드 템플릿 생성[cite: 5]
   const downloadTemplate = () => {
-    const headers = ['성명', '단대', '학년', '연락처', '학과(부)', '학번'];
-    const sampleRow = ['홍길동', '공과대학', '3', '01012345678', '컴퓨터공학과', '20240001'];
-    const csvContent = "\uFEFF" + headers.join(",") + "\n" + sampleRow.join(",");
+    const ws_data = [
+      ['성명', '단대', '학과(부)', '학번', '학년', '연락처', '재학/휴학'],
+      ['홍길동', '공과대학', '컴퓨터공학부', '20240001', '3', '01012345678', '재학']
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(ws_data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "회원등록양식");
     
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a"); 
-    link.href = URL.createObjectURL(blob); 
-    link.download = `동아리_부원일괄등록_양식.csv`; 
-    link.click();
+    // 열 너비 조절
+    ws['!cols'] = [{ wch: 10 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 8 }, { wch: 15 }, { wch: 12 }];
+    
+    XLSX.writeFile(wb, `동아리_부원일괄등록_양식.xlsx`);
   };
 
-  const exportToCSV = () => {
-    const headers = ['성명', '단대', '학년', '연락처', '학과(부)', '학번', '등급', '소속 팀', '주 세션'];
+  // 🌟 멤버 리스트 내보내기도 XLSX 포맷으로 변경[cite: 5]
+  const exportToExcel = () => {
+    const headers = ['성명', '단대', '학과(부)', '학번', '학년', '재학/휴학', '연락처', '등급', '소속 팀', '주 세션'];
     const rows = profiles.map(p => [ 
-      p.name, p.college || '', p.grade || '', p.phone || '', p.major || '', p.student_id, 
+      p.name, 
+      p.college || '', 
+      p.major || '', 
+      p.student_id, 
+      p.grade || '', 
+      p.enrollment_status || '재학', // 재학/휴학 추가
+      p.phone || '', 
       p.role === 'president' ? '회장' : p.role === 'leader' ? '팀장' : '부원', 
       p.team_names?.join(' / ') || '소속 없음', 
       p.session || '미정'
     ]);
-    const csvContent = "\uFEFF" + [headers, ...rows].map(e => e.map(item => `"${item}"`).join(",")).join("\n"); 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `동아리_부원명단_${new Date().toISOString().split('T')[0]}.csv`; link.click();
+    
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "부원명단");
+    
+    // 열 너비 자동화 느낌으로 고정 세팅
+    ws['!cols'] = [{ wch: 10 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 8 }, { wch: 10 }, { wch: 15 }, { wch: 8 }, { wch: 25 }, { wch: 15 }];
+
+    XLSX.writeFile(wb, `동아리_부원명단_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const togglePermission = async (userId: string, field: 'can_reserve' | 'can_post', currentValue: boolean) => {
@@ -281,7 +294,6 @@ export default function AdminPage() {
     if (error) { alert('권한 변경 실패: ' + error.message); fetchData(); }
   };
 
-  // 🌟 누락되었던 부원 삭제 함수 복구 완료!
   const handleDeleteMember = async (userId: string, userName: string) => {
     if (!confirm(`🚨 경고: [${userName}] 부원을 정말 영구 삭제하시겠습니까?\n\n이 부원이 작성한 글, 댓글, 투표 기록 등 모든 데이터가 함께 삭제되며 복구할 수 없습니다.`)) return;
 
@@ -310,6 +322,12 @@ export default function AdminPage() {
     if (role === 'president' || role === 'admin') return <span className="bg-primary/10 dark:bg-primary/20 text-primary text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">회장</span>;
     if (role === 'leader') return <span className="bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">팀장</span>;
     return <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">부원</span>;
+  };
+
+  // 재학/휴학 상태 뱃지
+  const getStatusBadge = (status: string) => {
+    if (status === '휴학') return <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-bold px-1.5 py-0.5 rounded">휴학</span>;
+    return <span className="bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold px-1.5 py-0.5 rounded">재학</span>;
   };
 
   return (
@@ -344,15 +362,15 @@ export default function AdminPage() {
                     <FileSpreadsheet className="w-4 h-4" /> 일괄 등록
                   </button>
                   <button onClick={() => setIsAddMemberModalOpen(true)} className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 dark:bg-slate-800/50 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-text-base text-sm font-bold rounded-lg border border-border-base transition-colors shrink-0">
-                    <UserPlus className="w-4 h-4" /> 신규 개별 등록
+                    <UserPlus className="w-4 h-4" /> 신규 등록
                   </button>
-                  <button onClick={exportToCSV} className="flex items-center gap-1.5 px-4 py-2 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 text-sm font-bold rounded-lg border border-emerald-200 dark:border-emerald-500/20 transition-colors shrink-0">
-                    <Download className="w-4 h-4" /> 명단 다운로드
+                  <button onClick={exportToExcel} className="flex items-center gap-1.5 px-4 py-2 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 text-sm font-bold rounded-lg border border-emerald-200 dark:border-emerald-500/20 transition-colors shrink-0">
+                    <Download className="w-4 h-4" /> 엑셀 다운로드
                   </button>
                 </div>
               </div>
 
-              {/* 테이블 영역 (단대, 학과 보이도록 수정) */}
+              {/* 테이블 영역 (단대, 학과, 상태 보이도록 수정) */}
               <div className="bg-bg-surface border border-border-base rounded-2xl overflow-hidden shadow-sm dark:shadow-xl transition-colors">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse min-w-200">
@@ -360,7 +378,7 @@ export default function AdminPage() {
                       <tr className="bg-slate-100 dark:bg-slate-800/50 border-b border-border-base transition-colors">
                         <th className="p-4 text-xs font-bold text-text-muted uppercase tracking-wider w-16 text-center">No</th>
                         <th className="p-4 text-xs font-bold text-text-muted uppercase tracking-wider">이름 / 학번</th>
-                        <th className="p-4 text-xs font-bold text-text-muted uppercase tracking-wider">소속 학과</th>
+                        <th className="p-4 text-xs font-bold text-text-muted uppercase tracking-wider">소속 학과 / 학년</th>
                         <th className="p-4 text-xs font-bold text-text-muted uppercase tracking-wider text-center">등급 (Role)</th>
                         <th className="p-4 text-xs font-bold text-text-muted uppercase tracking-wider text-center">예약 / 글 권한</th>
                         <th className="p-4 text-xs font-bold text-text-muted uppercase tracking-wider text-center w-16">관리</th>
@@ -380,7 +398,10 @@ export default function AdminPage() {
                             <div className="text-xs text-text-muted mt-0.5 transition-colors">{profile.student_id}</div>
                           </td>
                           <td className="p-4">
-                            <div className="text-sm font-medium text-text-base">{profile.major || '-'}</div>
+                            <div className="text-sm font-medium text-text-base flex items-center gap-2">
+                              {profile.major || '-'}
+                              {getStatusBadge(profile.enrollment_status || '재학')}
+                            </div>
                             <div className="text-xs text-text-muted mt-0.5">{profile.college ? `${profile.college} ${profile.grade ? `(${profile.grade}학년)` : ''}` : '-'}</div>
                           </td>
                           <td className="p-4 text-center">
@@ -617,7 +638,7 @@ export default function AdminPage() {
         </Dialog>
       </Transition>
 
-      {/* 🌟 모달 3: 일괄 등록 (CSV 파싱 구현 완료) */}
+      {/* 🌟 모달 3: 일괄 등록 (.xlsx 엑셀 반영 완료) */}
       <Transition appear show={isBatchOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={() => setIsBatchOpen(false)}>
           <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
@@ -640,24 +661,24 @@ export default function AdminPage() {
                 )}
 
                 <div className="flex justify-between items-center mb-6 transition-colors">
-                  <Dialog.Title className="text-xl font-bold text-text-base flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-emerald-500"/> 엑셀(CSV) 일괄 등록</Dialog.Title>
+                  <Dialog.Title className="text-xl font-bold text-text-base flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-emerald-500"/> 엑셀(.xlsx) 일괄 등록</Dialog.Title>
                   <button onClick={() => setIsBatchOpen(false)} className="text-text-muted hover:text-text-base transition p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/50"><CloseIcon className="w-5 h-5"/></button>
                 </div>
                 
                 <div className="space-y-4">
                   <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 p-4 rounded-xl text-sm text-emerald-700 dark:text-emerald-400">
                     <p className="font-bold mb-2">1단계: 정해진 양식 다운로드</p>
-                    <p className="text-xs mb-3 opacity-80">엑셀에서 내용을 채운 뒤 반드시 <span className="font-bold text-emerald-600 dark:text-emerald-300">"CSV (쉼표로 분리)"</span> 형식으로 저장해주세요.</p>
+                    <p className="text-xs mb-3 opacity-80">제공된 엑셀(.xlsx) 파일 양식에 정보를 기입해 주세요.</p>
                     <button onClick={downloadTemplate} className="w-full py-2 bg-emerald-100 dark:bg-emerald-500/20 hover:bg-emerald-200 dark:hover:bg-emerald-500/40 rounded-lg font-bold transition flex items-center justify-center gap-2">
-                      <Download className="w-4 h-4"/> 양식 다운로드 (.csv)
+                      <Download className="w-4 h-4"/> 엑셀 양식 다운로드
                     </button>
                   </div>
 
                   <div className="border-2 border-dashed border-border-base rounded-xl p-8 text-center bg-bg-base hover:border-primary/50 hover:bg-primary/5 transition cursor-pointer" onClick={() => fileInputRef.current?.click()}>
                     <UploadCloud className="w-8 h-8 text-text-muted mx-auto mb-2" />
-                    <p className="text-sm font-bold text-text-base">2단계: 완성된 CSV 파일 업로드</p>
-                    <p className="text-xs text-text-muted mt-1">클릭하여 파일을 선택하면 자동으로 등록이 시작됩니다.</p>
-                    <input type="file" accept=".csv" className="hidden" ref={fileInputRef} onChange={handleBatchUpload} />
+                    <p className="text-sm font-bold text-text-base">2단계: 완성된 엑셀 파일 업로드</p>
+                    <p className="text-xs text-text-muted mt-1">클릭하여 .xlsx 파일을 선택하면 자동으로 등록이 시작됩니다.</p>
+                    <input type="file" accept=".xlsx, .xls" className="hidden" ref={fileInputRef} onChange={handleBatchUpload} />
                   </div>
                 </div>
               </Dialog.Panel>

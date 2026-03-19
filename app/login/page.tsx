@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react'; // 🌟 useEffect 추가됨[cite: 6]
 import { supabase } from '../../lib/supabase';
 
 export default function LoginPage() {
@@ -7,15 +7,27 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // 🌟 자동 로그인 검문소 (세션 체크) 추가[cite: 6]
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        // 이미 주머니에 토큰(세션)이 있으면 로그인 화면을 스킵하고 바로 메인으로 패스!
+        window.location.href = '/';
+      }
+    };
+    checkSession();
+  }, []);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     
-    // 학번을 내부적으로 이메일 형식으로 변환하여 사용
+    // 학번을 내부적으로 이메일 형식으로 변환하여 사용[cite: 6]
     const pseudoEmail = `${studentId}@bandon.com`;
 
     try {
-      // 🌟 오직 '로그인'만 수행 (회원가입 로직 전면 제거)
+      // 🌟 오직 '로그인'만 수행 (회원가입 로직 전면 제거)[cite: 6]
       const { data, error } = await supabase.auth.signInWithPassword({ 
         email: pseudoEmail, 
         password 
@@ -28,7 +40,7 @@ export default function LoginPage() {
       }
 
       if (data?.session) {
-        window.location.href = '/'; // 로그인 성공 시 메인으로 이동
+        window.location.href = '/'; // 로그인 성공 시 메인으로 이동[cite: 6]
       }
 
     } catch (err) {

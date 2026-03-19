@@ -11,7 +11,7 @@ interface Booking {
   start: number;
   duration: number;
   team: string;
-  colorClass: string;
+  teamColor: string; // 🌟 색상 속성 추가
   fullDate: string;
   series_id: string | null;
 }
@@ -36,15 +36,6 @@ export default function TimetablePage() {
   const hours = Array.from({ length: 15 }, (_, i) => i + 8); 
   const timeSlots = Array.from({ length: 29 }, (_, i) => 8 + i * 0.5);
 
-  // 🌟 예약 블록 색상 대비 완벽 조정
-  const colorStyles = [
-    'bg-indigo-100 dark:bg-indigo-500/20 border-indigo-300 dark:border-indigo-500 text-indigo-700 dark:text-indigo-300',
-    'bg-emerald-100 dark:bg-emerald-500/20 border-emerald-300 dark:border-emerald-500 text-emerald-700 dark:text-emerald-400',
-    'bg-amber-100 dark:bg-amber-500/20 border-amber-300 dark:border-amber-500 text-amber-700 dark:text-amber-400',
-    'bg-rose-100 dark:bg-rose-500/20 border-rose-300 dark:border-rose-500 text-rose-700 dark:text-rose-400',
-    'bg-blue-100 dark:bg-blue-500/20 border-blue-300 dark:border-blue-500 text-blue-700 dark:text-blue-400'
-  ];
-
   const formatDateString = (d: Date) => {
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -58,11 +49,22 @@ export default function TimetablePage() {
     return `${h}:${m}`;
   };
 
+  // 🌟 색상을 받아서 투명도(Opacity)를 적용한 hex 코드로 변환하는 헬퍼 함수
+  const getHexWithOpacity = (hex: string, opacity: number) => {
+    const cleanHex = hex.replace('#', '');
+    const r = parseInt(cleanHex.substring(0, 2), 16);
+    const g = parseInt(cleanHex.substring(2, 4), 16);
+    const b = parseInt(cleanHex.substring(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+  };
+
   const fetchData = async () => {
     const { data: teamData } = await supabase.from('teams').select('*');
     if (teamData) setTeams(teamData);
 
-    const { data: resData } = await supabase.from('reservations').select('*, teams(name)');
+    // 🌟 teams 테이블에서 team_color도 함께 가져오도록 수정
+    const { data: resData } = await supabase.from('reservations').select('*, teams(name, team_color)');
+    
     if (resData) {
       const formatted = resData.map((res: any) => {
         const start = new Date(res.start_time);
@@ -73,7 +75,7 @@ export default function TimetablePage() {
           start: start.getHours() + start.getMinutes() / 60,
           duration: (end.getTime() - start.getTime()) / (1000 * 60 * 60),
           team: res.teams?.name || '삭제된 팀',
-          colorClass: colorStyles[res.team_id % colorStyles.length],
+          teamColor: res.teams?.team_color || '#3B82F6', // 🌟 팀 컬러 저장 (없으면 기본 파란색)
           fullDate: res.reservation_date,
           series_id: res.series_id
         };
@@ -219,11 +221,21 @@ export default function TimetablePage() {
                   </div>
                 ))}
                 
-                {/* 렌더링된 예약 블록들 */}
+                {/* 🌟 렌더링된 예약 블록들 (고유 컬러 반영) */}
                 {bookings.filter(b => weekDays.some(wd => wd.fullDate === b.fullDate)).map(b => (
                   <div key={b.id} onClick={(e) => { e.stopPropagation(); setSelectedBooking(b); setIsDetailOpen(true); }} 
-                       className={`absolute inset-x-1 border-l-4 rounded p-2 z-10 shadow-sm ${b.colorClass} hover:brightness-105 dark:hover:brightness-125 transition cursor-pointer`}
-                       style={{ top: `${(b.start - 8) * 5}rem`, left: `calc((100% / 7) * ${b.dayIndex})`, width: `calc(100% / 7 - 8px)`, height: `calc(${b.duration * 5}rem - 4px)`, marginLeft: '4px', marginTop: '2px' }}>
+                       className="absolute inset-x-1 border-l-4 rounded p-2 z-10 shadow-sm hover:brightness-105 dark:hover:brightness-125 transition cursor-pointer"
+                       style={{ 
+                         top: `${(b.start - 8) * 5}rem`, 
+                         left: `calc((100% / 7) * ${b.dayIndex})`, 
+                         width: `calc(100% / 7 - 8px)`, 
+                         height: `calc(${b.duration * 5}rem - 4px)`, 
+                         marginLeft: '4px', 
+                         marginTop: '2px',
+                         backgroundColor: getHexWithOpacity(b.teamColor, 0.15), // 배경은 투명하게
+                         borderColor: b.teamColor, // 테두리는 진하게
+                         color: b.teamColor // 글씨도 진하게
+                       }}>
                     <p className="text-[10px] font-bold uppercase truncate">{b.team}</p>
                     <p className="text-[9px] opacity-80">{formatTimeToString(b.start)} - {formatTimeToString(b.start+b.duration)}</p>
                   </div>
@@ -274,7 +286,7 @@ export default function TimetablePage() {
             <Dialog.Panel className="w-full max-w-sm rounded-3xl bg-bg-surface border border-border-base p-8 text-left shadow-2xl transition-all">
               <div className="flex justify-between items-start mb-6">
                 <div>
-                  <h3 className="text-2xl font-black text-text-base mb-1">{selectedBooking?.team}</h3>
+                  <h3 className="text-2xl font-black text-text-base mb-1" style={{ color: selectedBooking?.teamColor }}>{selectedBooking?.team}</h3>
                   <p className="text-primary text-sm font-bold uppercase tracking-wider">Booking Detail</p>
                 </div>
                 <button onClick={() => setIsDetailOpen(false)} className="text-text-muted hover:text-text-base transition"><X className="w-6 h-6" /></button>
