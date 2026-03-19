@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+/* Tailwind v4 다크모드 수동 연동 (next-themes 호환) */
+@variant dark (&:is(.dark *));
+
+@theme {
+  --color-primary: var(--primary);
+  --color-bg-base: var(--bg-base);
+  --color-bg-surface: var(--bg-surface);
+  --color-text-base: var(--text-base);
+  --color-text-muted: var(--text-muted);
+  --color-border-base: var(--border-color);
+
+  --radius-xl: 12px;
+  --radius-4xl: 32px;
+}
+
+@layer base {
+  :root {
+    --primary: #2536f4;
+    --bg-base: #f8fafc;
+    --bg-surface: #ffffff;
+    --text-base: #0f172a;
+    --text-muted: #64748b;
+    --border-color: #e2e8f0;
+  }
+
+  .dark {
+    --primary: #2536f4;
+    --bg-base: #0f121b;
+    --bg-surface: #1a1f2e;
+    --text-base: #f1f5f9;
+    --text-muted: #94a3b8;
+    --border-color: #334155;
+  }
+
+  /* 🌟 문제 해결: pb-24 (여백) 제거! 화면 끝까지 늘어나도록 초기화합니다. */
+  body {
+    @apply bg-bg-base text-text-base transition-colors duration-300 font-sans m-0 p-0;
+  }
+}
+
+@layer utilities {
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-slate-300 dark:bg-slate-700 rounded-full;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-400 dark:bg-slate-600;
+  }
+}
