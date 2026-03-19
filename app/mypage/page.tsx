@@ -6,7 +6,6 @@ import { supabase } from '../../lib/supabase';
 import { useTheme } from 'next-themes'; 
 import { useRouter } from 'next/navigation'; 
 
-// 🌟 프로필 인터페이스에 학적 관련 데이터 추가
 interface Profile { id: string; name: string; student_id: string; session: string; generation: string | null; major: string | null; phone: string | null; role: string; position: string | null; profile_image_url?: string; college?: string | null; grade?: string | null; enrollment_status?: string | null; }
 interface Post { id: number; type: string; title: string; created_at: string; }
 interface MyTeam { id: number; name: string; image_url: string | null; role: string; } 
@@ -22,8 +21,8 @@ export default function IntegratedProfilePage() {
   const [editPhone, setEditPhone] = useState('');
   const [editPosition, setEditPosition] = useState('');
   const [editSession, setEditSession] = useState(''); 
+  const [editGeneration, setEditGeneration] = useState(''); // 🌟 기수 상태 추가
   
-  // 🌟 추가된 학적 상태 폼 관리
   const [editCollege, setEditCollege] = useState('');
   const [editMajor, setEditMajor] = useState('');
   const [editGrade, setEditGrade] = useState('');
@@ -58,8 +57,7 @@ export default function IntegratedProfilePage() {
       setEditPhone(profileData.phone || '');
       setEditPosition(profileData.position || '미정');
       setEditSession(profileData.session || '미정'); 
-      
-      // 🌟 DB에서 가져온 학적 상태 폼에 세팅
+      setEditGeneration(profileData.generation || ''); // 🌟 기수 세팅
       setEditCollege(profileData.college || '');
       setEditMajor(profileData.major || '');
       setEditGrade(profileData.grade || '');
@@ -79,12 +77,6 @@ export default function IntegratedProfilePage() {
   useEffect(() => { 
     fetchData(); 
     setMounted(true); 
-
-    const teamSubscription = supabase.channel('my_teams_channel')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, () => { fetchData(); })
-      .subscribe();
-
-    return () => { supabase.removeChannel(teamSubscription); };
   }, []);
 
   const handleUpdateProfile = async () => {
@@ -92,7 +84,6 @@ export default function IntegratedProfilePage() {
     if (!editName.trim()) return alert('이름을 비울 수 없습니다.'); 
     
     setIsSubmitting(true);
-    // 🌟 추가된 데이터들을 함께 업데이트
     const { error } = await supabase.from('profiles').update({ 
       name: editName, 
       phone: editPhone, 
@@ -101,7 +92,8 @@ export default function IntegratedProfilePage() {
       grade: editGrade,
       enrollment_status: editEnrollmentStatus,
       position: editPosition, 
-      session: editSession 
+      session: editSession,
+      generation: editGeneration // 🌟 기수 저장
     }).eq('id', profile.id);
     
     setIsSubmitting(false);
@@ -115,22 +107,12 @@ export default function IntegratedProfilePage() {
     try {
       const file = e.target.files[0];
       const filePath = `profiles/user_${profile.id}_${Math.random()}.${file.name.split('.').pop()}`;
-      
-      const { error: uploadError } = await supabase.storage.from('community').upload(filePath, file);
-      if (uploadError) throw uploadError;
-
+      await supabase.storage.from('community').upload(filePath, file);
       const { data: urlData } = supabase.storage.from('community').getPublicUrl(filePath);
-      
-      const { error: updateError } = await supabase.from('profiles').update({ profile_image_url: urlData.publicUrl }).eq('id', profile.id);
-      if (updateError) throw updateError;
-
+      await supabase.from('profiles').update({ profile_image_url: urlData.publicUrl }).eq('id', profile.id);
       setProfile({ ...profile, profile_image_url: urlData.publicUrl });
       alert('프로필 사진이 변경되었습니다!');
-    } catch (error: any) {
-      alert('이미지 업로드 실패: ' + error.message);
-    } finally {
-      setIsUploading(false);
-    }
+    } catch (error: any) { alert('이미지 업로드 실패: ' + error.message); } finally { setIsUploading(false); }
   };
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -156,14 +138,11 @@ export default function IntegratedProfilePage() {
 
   return (
     <div className="flex-1 flex flex-col min-h-screen overflow-hidden relative font-sans transition-colors duration-300 bg-bg-base text-text-base">
-      
       <header className="shrink-0 bg-bg-surface/80 backdrop-blur-md border-b border-border-base z-10 sticky top-0 transition-colors">
         <div className="flex items-center p-4 justify-between max-w-3xl mx-auto w-full">
           <div className="w-10"></div>
           <h2 className="text-xl font-bold text-text-base flex-1 text-center tracking-tight">마이페이지</h2>
-          <button onClick={handleLogout} className="p-2 rounded-xl bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 text-rose-500 transition" title="로그아웃">
-            <LogOut className="w-5 h-5" />
-          </button>
+          <button onClick={handleLogout} className="p-2 rounded-xl bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 text-rose-500 transition" title="로그아웃"><LogOut className="w-5 h-5" /></button>
         </div>
       </header>
 
@@ -173,19 +152,11 @@ export default function IntegratedProfilePage() {
           <section className="bg-bg-surface border border-border-base rounded-3xl p-6 lg:p-8 relative overflow-hidden shadow-sm dark:shadow-xl transition-colors">
             <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-6 relative z-10 mb-6 border-b border-border-base pb-6 transition-colors">
               <div className="flex items-center gap-5">
-                
                 <div onClick={() => fileInputRef.current?.click()} className="relative w-20 h-20 bg-primary rounded-2xl flex items-center justify-center text-white shadow-lg shrink-0 transition-colors cursor-pointer group overflow-hidden border border-border-base">
-                  {profile.profile_image_url ? (
-                    <img src={profile.profile_image_url} alt="Profile" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
-                  ) : (
-                    <User className="w-10 h-10 group-hover:scale-110 transition-transform duration-300" />
-                  )}
-                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center">
-                    {isUploading ? <span className="text-[10px] font-bold">업로드 중</span> : <Camera className="w-6 h-6" />}
-                  </div>
+                  {profile.profile_image_url ? <img src={profile.profile_image_url} alt="Profile" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" /> : <User className="w-10 h-10 group-hover:scale-110 transition-transform duration-300" />}
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center">{isUploading ? <span className="text-[10px] font-bold">업로드 중</span> : <Camera className="w-6 h-6" />}</div>
                   <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageUpload} className="hidden" />
                 </div>
-
                 <div>
                   <div className="flex items-center gap-2 mb-1.5">
                     <h3 className="text-2xl font-black text-text-base">{profile.name}</h3>
@@ -195,35 +166,22 @@ export default function IntegratedProfilePage() {
                   <p className="text-xs font-bold text-primary transition-colors">{profile.session || '세션 미지정'} • {profile.generation || '기수 미지정'}</p>
                 </div>
               </div>
-              <button onClick={() => setIsEditing(true)} className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-slate-800/50 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-text-base rounded-xl font-bold text-sm transition self-start sm:self-auto border border-border-base">
-                <Edit3 className="w-4 h-4" /> 정보 수정
-              </button>
+              <button onClick={() => setIsEditing(true)} className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-slate-800/50 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-text-base rounded-xl font-bold text-sm transition self-start sm:self-auto border border-border-base"><Edit3 className="w-4 h-4" /> 정보 수정</button>
             </div>
 
-            {/* 🌟 정보를 2x2 그리드로 깔끔하게 정리 */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 relative z-10">
               <div className="flex flex-col gap-1 bg-bg-base border border-border-base p-4 rounded-2xl transition-colors">
                 <div className="flex items-center gap-2 text-text-muted text-xs font-bold uppercase tracking-wider mb-1"><Music className="w-3.5 h-3.5" /> 포지션</div>
                 <span className="font-bold text-text-base text-sm">{profile.position || '미정'}</span>
               </div>
-              
               <div className="flex flex-col gap-1 bg-bg-base border border-border-base p-4 rounded-2xl transition-colors">
                 <div className="flex items-center gap-2 text-text-muted text-xs font-bold uppercase tracking-wider mb-1"><GraduationCap className="w-3.5 h-3.5" /> 학적 상태</div>
-                <span className="font-bold text-text-base text-sm">
-                  <span className={`${profile.enrollment_status === '재학' ? 'text-emerald-500' : 'text-amber-500'}`}>
-                    {profile.enrollment_status || '재학'}
-                  </span>
-                  {profile.grade ? ` (${profile.grade}학년)` : ''}
-                </span>
+                <span className="font-bold text-text-base text-sm"><span className={`${profile.enrollment_status === '재학' ? 'text-emerald-500' : 'text-amber-500'}`}>{profile.enrollment_status || '재학'}</span>{profile.grade ? ` (${profile.grade}학년)` : ''}</span>
               </div>
-
               <div className="flex flex-col gap-1 bg-bg-base border border-border-base p-4 rounded-2xl transition-colors">
                 <div className="flex items-center gap-2 text-text-muted text-xs font-bold uppercase tracking-wider mb-1"><BookOpen className="w-3.5 h-3.5" /> 소속 정보</div>
-                <span className="font-bold text-text-base text-sm line-clamp-1">
-                  {profile.college ? `${profile.college} ` : ''}{profile.major || '입력 안 됨'}
-                </span>
+                <span className="font-bold text-text-base text-sm line-clamp-1">{profile.college ? `${profile.college} ` : ''}{profile.major || '입력 안 됨'}</span>
               </div>
-
               <div className="flex flex-col gap-1 bg-bg-base border border-border-base p-4 rounded-2xl transition-colors">
                 <div className="flex items-center gap-2 text-text-muted text-xs font-bold uppercase tracking-wider mb-1"><Phone className="w-3.5 h-3.5" /> 연락처</div>
                 <span className="font-bold text-text-base text-sm">{profile.phone || '입력 안 됨'}</span>
@@ -233,41 +191,19 @@ export default function IntegratedProfilePage() {
 
           {mounted && (
             <section className="bg-bg-surface border border-border-base rounded-3xl p-6 lg:p-8 shadow-sm dark:shadow-xl transition-colors">
-              <h3 className="text-lg font-bold text-text-base flex items-center gap-2 mb-6">
-                <Palette className="w-5 h-5 text-primary"/> 화면 및 테마 설정
-              </h3>
-              
+              <h3 className="text-lg font-bold text-text-base flex items-center gap-2 mb-6"><Palette className="w-5 h-5 text-primary"/> 화면 및 테마 설정</h3>
               <div className="space-y-6">
                 <div>
                   <label className="text-xs font-bold text-text-muted uppercase tracking-wider block mb-3">모드 설정</label>
                   <div className="flex bg-bg-base p-1 rounded-xl w-fit border border-border-base transition-colors">
-                    <button 
-                      onClick={() => setTheme('light')} 
-                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${theme === 'light' ? 'bg-bg-surface text-primary shadow-sm border border-border-base' : 'text-text-muted hover:text-text-base'}`}
-                    >
-                      <Sun className="w-4 h-4" /> 라이트
-                    </button>
-                    <button 
-                      onClick={() => setTheme('dark')} 
-                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${theme === 'dark' ? 'bg-bg-surface text-primary shadow-sm border border-border-base' : 'text-text-muted hover:text-text-base'}`}
-                    >
-                      <Moon className="w-4 h-4" /> 다크
-                    </button>
+                    <button onClick={() => setTheme('light')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${theme === 'light' ? 'bg-bg-surface text-primary shadow-sm border border-border-base' : 'text-text-muted hover:text-text-base'}`}><Sun className="w-4 h-4" /> 라이트</button>
+                    <button onClick={() => setTheme('dark')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${theme === 'dark' ? 'bg-bg-surface text-primary shadow-sm border border-border-base' : 'text-text-muted hover:text-text-base'}`}><Moon className="w-4 h-4" /> 다크</button>
                   </div>
                 </div>
-
                 <div>
                   <label className="text-xs font-bold text-text-muted uppercase tracking-wider block mb-3">포인트 컬러</label>
                   <div className="flex flex-wrap gap-4">
-                    {colorThemes.map((color) => (
-                      <button
-                        key={color.name}
-                        onClick={() => changePrimaryColor(color.hex)}
-                        className="w-10 h-10 rounded-full border-2 border-transparent focus:border-slate-400 dark:focus:border-white ring-2 ring-transparent focus:ring-primary transition-transform hover:scale-110 shadow-md"
-                        style={{ backgroundColor: color.hex }}
-                        title={color.name}
-                      />
-                    ))}
+                    {colorThemes.map((color) => <button key={color.name} onClick={() => changePrimaryColor(color.hex)} className="w-10 h-10 rounded-full border-2 border-transparent focus:border-slate-400 dark:focus:border-white ring-2 ring-transparent focus:ring-primary transition-transform hover:scale-110 shadow-md" style={{ backgroundColor: color.hex }} title={color.name} />)}
                   </div>
                 </div>
               </div>
@@ -276,13 +212,11 @@ export default function IntegratedProfilePage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
             <div className="space-y-6 lg:space-y-8">
-              
               <section className="bg-bg-surface border border-border-base rounded-3xl p-6 lg:p-8 shadow-sm dark:shadow-xl transition-colors">
                 <div className="flex justify-between items-center mb-2">
                   <h3 className="text-lg font-bold text-text-base flex items-center gap-2"><KeyRound className="w-5 h-5 text-primary"/> 보안 설정</h3>
                   {!isChangingPassword && <button onClick={() => setIsChangingPassword(true)} className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800/50 text-text-base text-xs font-bold rounded-lg border border-border-base hover:bg-slate-200 dark:hover:bg-slate-700/80 transition">비밀번호 변경</button>}
                 </div>
-                
                 {isChangingPassword && (
                   <form onSubmit={handleChangePassword} className="mt-4 p-4 bg-bg-base rounded-2xl border border-border-base transition-colors">
                     <label className="block text-xs font-bold text-text-muted mb-2 uppercase tracking-wider">새 비밀번호 (6자리 이상)</label>
@@ -297,20 +231,12 @@ export default function IntegratedProfilePage() {
               </section>
 
               <section className="bg-bg-surface border border-border-base rounded-3xl p-6 lg:p-8 shadow-sm dark:shadow-xl transition-colors">
-                <h3 className="text-lg font-bold text-text-base flex items-center gap-2 mb-4">
-                  <Users className="w-5 h-5 text-primary"/> 나의 소속 팀 
-                  <span className="bg-slate-100 dark:bg-slate-800/50 text-text-muted text-xs px-2.5 py-0.5 rounded-full ml-1 border border-border-base">{myTeams.length}</span>
-                </h3>
-                
+                <h3 className="text-lg font-bold text-text-base flex items-center gap-2 mb-4"><Users className="w-5 h-5 text-primary"/> 나의 소속 팀 <span className="bg-slate-100 dark:bg-slate-800/50 text-text-muted text-xs px-2.5 py-0.5 rounded-full ml-1 border border-border-base">{myTeams.length}</span></h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {myTeams.map(team => (
                     <div key={team.id} onClick={() => router.push(`/team?id=${team.id}`)} className="bg-bg-base border border-border-base p-4 rounded-2xl flex items-center gap-3 hover:border-primary/50 transition cursor-pointer group shadow-sm">
                       <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800/50 flex items-center justify-center font-bold text-text-muted overflow-hidden border border-border-base shrink-0 transition-colors">
-                        {team.image_url ? (
-                          <img src={team.image_url} alt={team.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
-                        ) : (
-                          team.name.charAt(0)
-                        )}
+                        {team.image_url ? <img src={team.image_url} alt={team.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform" /> : team.name.charAt(0)}
                       </div>
                       <div className="flex-1 min-w-0">
                         <h4 className="font-bold text-text-base text-sm group-hover:text-primary transition-colors truncate">{team.name}</h4>
@@ -319,38 +245,25 @@ export default function IntegratedProfilePage() {
                       <ChevronRight className="w-4 h-4 text-text-muted group-hover:text-primary transition opacity-0 group-hover:opacity-100 -ml-1 shrink-0" />
                     </div>
                   ))}
-
                   <button onClick={() => router.push('/team')} className="bg-bg-base border-2 border-dashed border-border-base p-4 rounded-2xl flex flex-col items-center justify-center text-text-muted hover:text-primary hover:border-primary transition group min-h-22">
-                    <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800/50 group-hover:bg-primary/10 flex items-center justify-center mb-1 transition-colors border border-border-base group-hover:border-primary/20">
-                      <Plus className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                    </div>
+                    <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800/50 group-hover:bg-primary/10 flex items-center justify-center mb-1 transition-colors border border-border-base group-hover:border-primary/20"><Plus className="w-4 h-4 group-hover:scale-110 transition-transform" /></div>
                     <span className="font-bold text-xs">새로운 팀 찾기</span>
                   </button>
                 </div>
               </section>
-
             </div>
 
             <section className="bg-bg-surface border border-border-base rounded-3xl p-6 lg:p-8 shadow-sm dark:shadow-xl flex flex-col h-full transition-colors">
-              <h3 className="text-lg font-bold text-text-base mb-6 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-primary" /> 내가 작성한 글
-                <span className="bg-slate-100 dark:bg-slate-800/50 text-text-muted text-xs px-2.5 py-0.5 rounded-full ml-1 border border-border-base">{myPosts.length}</span>
-              </h3>
-              
+              <h3 className="text-lg font-bold text-text-base mb-6 flex items-center gap-2"><FileText className="w-5 h-5 text-primary" /> 내가 작성한 글<span className="bg-slate-100 dark:bg-slate-800/50 text-text-muted text-xs px-2.5 py-0.5 rounded-full ml-1 border border-border-base">{myPosts.length}</span></h3>
               <div className="space-y-3 flex-1 overflow-y-auto pr-1 custom-scrollbar">
                 {myPosts.length === 0 ? (
-                  <div className="text-center py-12 text-text-muted border border-dashed border-border-base rounded-2xl bg-bg-base flex flex-col items-center transition-colors">
-                    <FileText className="w-8 h-8 opacity-20 mb-2" />
-                    <p className="text-sm">아직 작성한 게시글이 없습니다.</p>
-                  </div>
+                  <div className="text-center py-12 text-text-muted border border-dashed border-border-base rounded-2xl bg-bg-base flex flex-col items-center transition-colors"><FileText className="w-8 h-8 opacity-20 mb-2" /><p className="text-sm">아직 작성한 게시글이 없습니다.</p></div>
                 ) : (
                   myPosts.map(post => (
                     <div key={post.id} className="flex items-center justify-between p-4 bg-bg-base border border-border-base rounded-2xl hover:border-slate-300 dark:hover:border-slate-500 transition cursor-pointer group">
                       <div className="flex-1 pr-4">
                         <div className="flex items-center gap-2 mb-1.5">
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800/50 text-text-muted border border-border-base uppercase transition-colors">
-                            {post.type === 'free' ? '자유' : post.type === 'repair' ? '수리' : post.type === 'notice' ? '공지' : '커뮤니티'}
-                          </span>
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800/50 text-text-muted border border-border-base uppercase transition-colors">{post.type === 'free' ? '자유' : post.type === 'repair' ? '수리' : post.type === 'notice' ? '공지' : '커뮤니티'}</span>
                           <span className="text-xs text-text-muted">{new Date(post.created_at).toLocaleDateString()}</span>
                         </div>
                         <p className="text-sm font-semibold text-text-base group-hover:text-primary transition line-clamp-1">{post.title}</p>
@@ -369,22 +282,24 @@ export default function IntegratedProfilePage() {
         <Dialog as="div" className="relative z-50" onClose={() => setIsEditing(false)}>
           <div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm transition-opacity" />
           <div className="fixed inset-0 flex items-center justify-center p-4">
-            {/* 화면 높이를 넘어갈 수 있으므로 max-h와 overflow 추가 */}
             <Dialog.Panel className="w-full max-w-md rounded-3xl bg-bg-surface border border-border-base p-6 lg:p-8 text-left shadow-2xl transition-colors max-h-[90vh] overflow-y-auto custom-scrollbar">
               <div className="flex justify-between items-center mb-8">
-                <Dialog.Title className="text-xl font-bold text-text-base flex items-center gap-2">
-                  <Settings className="w-5 h-5 text-primary" /> 프로필 수정
-                </Dialog.Title>
+                <Dialog.Title className="text-xl font-bold text-text-base flex items-center gap-2"><Settings className="w-5 h-5 text-primary" /> 프로필 수정</Dialog.Title>
                 <button onClick={() => setIsEditing(false)} className="text-text-muted hover:text-text-base transition p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><X className="w-5 h-5"/></button>
               </div>
               
               <div className="space-y-5">
-                <div>
-                  <label className="text-xs font-bold text-text-muted uppercase mb-1.5 block tracking-wider">이름</label>
-                  <input type="text" value={editName} onChange={e => setEditName(e.target.value)} placeholder="실명 입력" className="w-full bg-bg-base border border-border-base rounded-xl p-3.5 text-text-base focus:border-primary outline-none transition-colors" />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-text-muted uppercase mb-1.5 block tracking-wider">이름</label>
+                    <input type="text" value={editName} onChange={e => setEditName(e.target.value)} placeholder="실명 입력" className="w-full bg-bg-base border border-border-base rounded-xl p-3.5 text-text-base focus:border-primary outline-none transition-colors" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-text-muted uppercase mb-1.5 block tracking-wider">기수</label>
+                    <input type="text" value={editGeneration} onChange={e => setEditGeneration(e.target.value)} placeholder="예: 00기" className="w-full bg-bg-base border border-border-base rounded-xl p-3.5 text-text-base focus:border-primary outline-none transition-colors" />
+                  </div>
                 </div>
 
-                {/* 🌟 학적 정보 폼 추가 */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-bold text-text-muted uppercase mb-1.5 block tracking-wider">재학/휴학</label>
@@ -446,9 +361,7 @@ export default function IntegratedProfilePage() {
 
               <div className="flex gap-3 mt-10">
                 <button onClick={() => setIsEditing(false)} className="flex-1 py-3.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-text-base font-bold rounded-xl transition-colors border border-border-base">취소</button>
-                <button onClick={handleUpdateProfile} disabled={isSubmitting} className="flex-1 py-3.5 bg-primary text-white font-bold rounded-xl hover:brightness-110 disabled:opacity-50 transition shadow-lg shadow-primary/20">
-                  {isSubmitting ? '저장 중...' : '변경사항 저장'}
-                </button>
+                <button onClick={handleUpdateProfile} disabled={isSubmitting} className="flex-1 py-3.5 bg-primary text-white font-bold rounded-xl hover:brightness-110 disabled:opacity-50 transition shadow-lg shadow-primary/20">{isSubmitting ? '저장 중...' : '변경사항 저장'}</button>
               </div>
             </Dialog.Panel>
           </div>

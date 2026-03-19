@@ -4,7 +4,8 @@ import { Inter } from 'next/font/google';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ThemeProvider } from 'next-themes';
-import { LayoutDashboard, Users, CalendarDays, MessageSquare, Shield, LogOut, Search, User, Music, ChevronLeft, Hash, Home } from 'lucide-react';
+// 🌟 MessageCircle 아이콘을 추가로 불러옵니다.
+import { LayoutDashboard, Users, CalendarDays, MessageSquare, MessageCircle, Shield, LogOut, Search, User, Music, ChevronLeft, Hash, Home } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import './globals.css';
 
@@ -16,6 +17,7 @@ const MenuIcon = ({ name }: { name: string }) => {
     team: <Users className="w-5 h-5" />,
     reservation: <CalendarDays className="w-5 h-5" />,
     community: <MessageSquare className="w-5 h-5" />,
+    chat: <MessageCircle className="w-5 h-5" />, // 🌟 채팅 아이콘 맵핑 추가
     admin: <Shield className="w-5 h-5" />,
   };
   return iconMap[name] || <Hash className="w-5 h-5" />;
@@ -82,7 +84,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   }
 
   const getPageTitle = () => {
-    const navItems = [{ path: '/', name: '홈' }, { path: '/team', name: '팀 목록' }, { path: '/reservation', name: '합주실 예약' }, { path: '/community', name: '커뮤니티' }, { path: '/admin', name: '관리자 데스크' }, { path: '/mypage', name: '마이페이지' }];
+    const navItems = [
+      { path: '/', name: '홈' }, 
+      { path: '/team', name: '팀 목록' }, 
+      { path: '/reservation', name: '합주실 예약' }, 
+      { path: '/community', name: '커뮤니티' }, 
+      { path: '/chat', name: '메신저' }, // 🌟 상단 타이틀용 이름 추가
+      { path: '/admin', name: '관리자 데스크' }, 
+      { path: '/mypage', name: '마이페이지' }
+    ];
     const match = navItems.find(item => item.path === pathname);
     return match ? match.name : 'Blacksaint';
   };
@@ -93,7 +103,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     { path: '/', name: '홈', icon: 'dashboard' }, 
     { path: '/team', name: '팀 목록', icon: 'team' }, 
     { path: '/reservation', name: '합주실 예약', icon: 'reservation' }, 
-    { path: '/community', name: '커뮤니티', icon: 'community' }
+    { path: '/community', name: '커뮤니티', icon: 'community' },
+    { path: '/chat', name: '메신저', icon: 'chat' } // 🌟 데스크톱 사이드바용 메뉴 추가
   ];
   if (isPresident) {
     navItems.push({ path: '/admin', name: '관리자 데스크', icon: 'admin' });
@@ -186,24 +197,29 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               {children}
             </main>
 
+            {/* 🌟 모바일 하단 바: 6개의 아이템이 고르게 분배되도록 flex-1 클래스를 추가했습니다. */}
             <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-bg-surface/95 backdrop-blur-md border-t border-border-base z-50 flex items-center justify-around px-2 pb-safe transition-colors duration-300">
-              <Link href="/" className={`flex flex-col items-center justify-center gap-1 w-16 h-full transition-colors ${pathname === '/' ? 'text-primary' : 'text-text-muted hover:text-text-base'}`}>
+              <Link href="/" className={`flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors ${pathname === '/' ? 'text-primary' : 'text-text-muted hover:text-text-base'}`}>
                 <Home className={`w-6 h-6 ${pathname === '/' ? 'fill-current' : ''}`} />
                 <span className="text-[10px] font-bold">홈</span>
               </Link>
-              <Link href="/reservation" className={`flex flex-col items-center justify-center gap-1 w-16 h-full transition-colors ${pathname.startsWith('/reservation') ? 'text-primary' : 'text-text-muted hover:text-text-base'}`}>
+              <Link href="/reservation" className={`flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors ${pathname.startsWith('/reservation') ? 'text-primary' : 'text-text-muted hover:text-text-base'}`}>
                 <CalendarDays className={`w-6 h-6 ${pathname.startsWith('/reservation') ? 'fill-current' : ''}`} />
                 <span className="text-[10px] font-bold">일정</span>
               </Link>
-              <Link href="/team" className={`flex flex-col items-center justify-center gap-1 w-16 h-full transition-colors ${pathname.startsWith('/team') ? 'text-primary' : 'text-text-muted hover:text-text-base'}`}>
+              <Link href="/team" className={`flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors ${pathname.startsWith('/team') ? 'text-primary' : 'text-text-muted hover:text-text-base'}`}>
                 <Users className={`w-6 h-6 ${pathname.startsWith('/team') ? 'fill-current' : ''}`} />
                 <span className="text-[10px] font-bold">팀</span>
               </Link>
-              <Link href="/community" className={`flex flex-col items-center justify-center gap-1 w-16 h-full transition-colors ${pathname.startsWith('/community') ? 'text-primary' : 'text-text-muted hover:text-text-base'}`}>
+              <Link href="/community" className={`flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors ${pathname.startsWith('/community') ? 'text-primary' : 'text-text-muted hover:text-text-base'}`}>
                 <MessageSquare className={`w-6 h-6 ${pathname.startsWith('/community') ? 'fill-current' : ''}`} />
-                <span className="text-[10px] font-bold">커뮤니티</span>
+                <span className="text-[10px] font-bold">게시판</span>
               </Link>
-              <Link href="/mypage" className={`flex flex-col items-center justify-center gap-1 w-16 h-full transition-colors ${pathname.startsWith('/mypage') ? 'text-primary' : 'text-text-muted hover:text-text-base'}`}>
+              <Link href="/chat" className={`flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors ${pathname.startsWith('/chat') ? 'text-primary' : 'text-text-muted hover:text-text-base'}`}>
+                <MessageCircle className={`w-6 h-6 ${pathname.startsWith('/chat') ? 'fill-current' : ''}`} />
+                <span className="text-[10px] font-bold">채팅</span>
+              </Link>
+              <Link href="/mypage" className={`flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors ${pathname.startsWith('/mypage') ? 'text-primary' : 'text-text-muted hover:text-text-base'}`}>
                 <User className={`w-6 h-6 ${pathname.startsWith('/mypage') ? 'fill-current' : ''}`} />
                 <span className="text-[10px] font-bold">프로필</span>
               </Link>
