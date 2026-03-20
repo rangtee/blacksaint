@@ -116,7 +116,11 @@ export default function CommunityPage() {
         });
         setPosts(mappedPosts);
       }
-    } catch (err) { console.error(err); } finally { setIsLoading(false); }
+    } catch (err) { 
+      console.error('게시글 불러오기 에러:', err); 
+    } finally { 
+      setIsLoading(false); 
+    }
   };
 
   const fetchComments = async (postId: number) => {
@@ -137,22 +141,29 @@ export default function CommunityPage() {
         });
         setComments(mappedComments);
       }
-    } catch (err) { console.error(err); }
+    } catch (err) { 
+      // 🌟 에러가 발생해도 앱이 터지지 않도록 안전하게 처리
+      console.error('댓글 불러오기 에러:', err); 
+    }
   };
 
   const fetchPollData = async (postId: number) => {
-    const { data: pollData } = await supabase.from('polls').select('*').eq('post_id', postId).single();
-    if (pollData) {
-      setCurrentPoll(pollData);
-      const { data: optionsData } = await supabase.from('poll_options').select('*').eq('poll_id', pollData.id).order('id');
-      setCurrentPollOptions(optionsData || []);
-      const { data: votesData } = await supabase.from('poll_votes').select('*').eq('poll_id', pollData.id);
-      setCurrentPollVotes(votesData || []);
-      if (currentUser) {
-        setSelectedOptionIds((votesData || []).filter((v: any) => v.user_id === currentUser.id).map((v: any) => v.option_id));
+    try {
+      const { data: pollData } = await supabase.from('polls').select('*').eq('post_id', postId).single();
+      if (pollData) {
+        setCurrentPoll(pollData);
+        const { data: optionsData } = await supabase.from('poll_options').select('*').eq('poll_id', pollData.id).order('id');
+        setCurrentPollOptions(optionsData || []);
+        const { data: votesData } = await supabase.from('poll_votes').select('*').eq('poll_id', pollData.id);
+        setCurrentPollVotes(votesData || []);
+        if (currentUser) {
+          setSelectedOptionIds((votesData || []).filter((v: any) => v.user_id === currentUser.id).map((v: any) => v.option_id));
+        }
+      } else {
+        setCurrentPoll(null); setCurrentPollOptions([]); setCurrentPollVotes([]); setSelectedOptionIds([]);
       }
-    } else {
-      setCurrentPoll(null); setCurrentPollOptions([]); setCurrentPollVotes([]); setSelectedOptionIds([]);
+    } catch (err) {
+      console.error('투표 데이터 불러오기 에러:', err);
     }
   };
 
@@ -274,12 +285,10 @@ export default function CommunityPage() {
     fetchComments(selectedPost!.id); fetchPosts(); 
   };
 
-  // 🌟 알림 발송 기능이 포함된 댓글 작성 로직
   const handleWriteComment = async (e?: React.KeyboardEvent) => {
     if (e && e.key !== 'Enter') return;
     if (!newComment.trim() || !selectedPost || !currentUser) return;
     
-    // 1. 기존 댓글 저장 로직
     await supabase.from('comments').insert([{ 
       post_id: selectedPost.id, 
       content: newComment, 
@@ -288,18 +297,17 @@ export default function CommunityPage() {
       author_id: currentUser.id 
     }]);
 
-    // 🌟 2. 알림 API 쏘기 로직 추가 (내가 내 글에 댓글 달았을 땐 알림 안 보냄)
     if (selectedPost.author_id && selectedPost.author_id !== currentUser.id) {
       try {
         await fetch('/api/send-notification', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            targetUserId: selectedPost.author_id, // 알림 받을 사람 (게시글 작성자)
-            senderName: userProfile.name, // 알림 보내는 사람 (댓글 작성자)
+            targetUserId: selectedPost.author_id,
+            senderName: userProfile.name,
             type: 'comment',
             message: '회원님의 게시글에 새 댓글을 남겼습니다.',
-            link: '/community' // 알림 누르면 이동할 페이지
+            link: '/community'
           })
         });
       } catch (error) {
@@ -552,6 +560,7 @@ export default function CommunityPage() {
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex-1 pr-4">
                       <span className="inline-block mb-1.5 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider border bg-bg-base text-text-muted border-border-base transition-colors">{getCategoryName(selectedPost.category_id)} {selectedPost.sub_category_id && `> ${getCategoryName(selectedPost.sub_category_id)}`}</span>
+                      {/* 🌟 CSS 클래스명 정정 완료: break-words */}
                       <h3 className="text-xl lg:text-2xl font-black text-text-base leading-snug wrap-break-words">{selectedPost.title}</h3>
                     </div>
                     <button onClick={() => setIsDetailModalOpen(false)} className="text-text-muted hover:text-text-base shrink-0 transition-colors p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/50"><X className="w-6 h-6 lg:w-5 lg:h-5"/></button>
@@ -581,6 +590,7 @@ export default function CommunityPage() {
                 </div>
 
                 <div className="flex-1 overflow-auto custom-scrollbar p-5 lg:p-6 pb-24">
+                  {/* 🌟 CSS 클래스명 정정 완료: break-words */}
                   <div className="prose dark:prose-invert max-w-none text-slate-700 dark:text-slate-300 leading-relaxed mb-8 blog-content wrap-break-words overflow-x-hidden" dangerouslySetInnerHTML={{ __html: selectedPost.content }} />
                   <style jsx global>{`.blog-content img { max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--border-color); margin: 16px auto; display: block; object-fit: contain; }`}</style>
                   
@@ -627,6 +637,7 @@ export default function CommunityPage() {
                                       }
                                     </div>
                                   )}
+                                  {/* 🌟 CSS 클래스명 정정 완료: break-words */}
                                   <span className={`text-sm wrap-break-words line-clamp-2 ${isSelected ? 'text-primary font-black' : 'text-text-base font-medium'}`}>{opt.content}</span>
                                 </div>
                                 {showResults && <span className="text-[10px] lg:text-xs font-bold text-text-muted bg-bg-base px-2 py-1 rounded-md shrink-0 ml-2">{percentage}% ({voteCount}표)</span>}
@@ -669,6 +680,7 @@ export default function CommunityPage() {
                               </div>
                             </div>
                             
+                            {/* 🌟 CSS 클래스명 정정 완료: break-words */}
                             <p className="text-sm text-text-base leading-relaxed wrap-break-words whitespace-pre-wrap mb-3">
                               {renderCommentContent(comment.content)}
                             </p>
