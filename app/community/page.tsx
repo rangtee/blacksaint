@@ -553,13 +553,16 @@ export default function CommunityPage() {
         <Dialog as="div" className="relative z-50" onClose={() => setIsDetailModalOpen(false)}>
           <div className="fixed inset-0 bg-black/60 dark:bg-black/80 backdrop-blur-sm transition-opacity" />
           <div className="fixed inset-0 flex items-center justify-center sm:p-4">
-            <Dialog.Panel className="w-full sm:max-w-2xl bg-bg-surface sm:rounded-3xl border border-border-base h-full sm:h-auto max-h-dvh sm:max-h-[90vh] flex flex-col shadow-2xl relative transition-colors overflow-hidden">
+            {/* 🌟 수정 포인트 1: 모달창 자체를 flex-col로 만들고 고정 높이와 둥근 모서리 설정 */}
+            <Dialog.Panel className="w-full sm:max-w-2xl bg-bg-surface sm:rounded-3xl border border-border-base h-dvh sm:h-[85vh] flex flex-col shadow-2xl relative transition-colors overflow-hidden">
+              
               {selectedPost && (<>
-                <div className="p-5 lg:p-6 border-b border-border-base shrink-0 relative transition-colors bg-bg-surface z-10">
+                {/* 상단 헤더 영역 (고정) */}
+                <div className="p-5 lg:p-6 border-b border-border-base shrink-0 relative transition-colors bg-bg-surface z-10 shadow-sm">
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex-1 pr-4">
                       <span className="inline-block mb-1.5 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider border bg-bg-base text-text-muted border-border-base transition-colors">{getCategoryName(selectedPost.category_id)} {selectedPost.sub_category_id && `> ${getCategoryName(selectedPost.sub_category_id)}`}</span>
-                      <h3 className="text-xl lg:text-2xl font-black text-text-base leading-snug wrap-break-words">{selectedPost.title}</h3>
+                      <h3 className="text-xl lg:text-2xl font-black text-text-base leading-snug wrap-break-word">{selectedPost.title}</h3>
                     </div>
                     <button onClick={() => setIsDetailModalOpen(false)} className="text-text-muted hover:text-text-base shrink-0 transition-colors p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/50"><X className="w-6 h-6 lg:w-5 lg:h-5"/></button>
                   </div>
@@ -587,8 +590,9 @@ export default function CommunityPage() {
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-auto custom-scrollbar p-5 lg:p-6 pb-32">
-                  <div className="prose dark:prose-invert max-w-none text-slate-700 dark:text-slate-300 leading-relaxed mb-8 blog-content wrap-break-words overflow-x-hidden" dangerouslySetInnerHTML={{ __html: selectedPost.content }} />
+                {/* 🌟 수정 포인트 2: 스크롤이 되는 글/댓글 영역 (하단 여백 대폭 추가) */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-5 lg:p-6 pb-32 md:pb-40 relative">
+                  <div className="prose dark:prose-invert max-w-none text-slate-700 dark:text-slate-300 leading-relaxed mb-8 blog-content wrap-break-word overflow-x-hidden" dangerouslySetInnerHTML={{ __html: selectedPost.content }} />
                   <style jsx global>{`.blog-content img { max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--border-color); margin: 16px auto; display: block; object-fit: contain; }`}</style>
                   
                   {currentPoll && (
@@ -634,7 +638,7 @@ export default function CommunityPage() {
                                       }
                                     </div>
                                   )}
-                                  <span className={`text-sm wrap-break-words line-clamp-2 ${isSelected ? 'text-primary font-black' : 'text-text-base font-medium'}`}>{opt.content}</span>
+                                  <span className={`text-sm wrap-break-word line-clamp-2 ${isSelected ? 'text-primary font-black' : 'text-text-base font-medium'}`}>{opt.content}</span>
                                 </div>
                                 {showResults && <span className="text-[10px] lg:text-xs font-bold text-text-muted bg-bg-base px-2 py-1 rounded-md shrink-0 ml-2">{percentage}% ({voteCount}표)</span>}
                               </div>
@@ -657,7 +661,6 @@ export default function CommunityPage() {
                     <h4 className="font-bold text-text-base mb-6 flex items-center gap-2"><MessageCircle className="w-5 h-5 text-primary" /> 댓글 {comments.length}</h4>
                     <div className="space-y-4 lg:space-y-5">
                       {comments.length === 0 ? <p className="text-center p-6 text-sm text-text-muted">아직 댓글이 없습니다.</p> : comments.map(comment => {
-                        // 🌟 게시글 작성자이거나 댓글 작성자이거나 관리자일 때 삭제 가능하도록 권한 수정
                         const canDeleteComment = currentUser?.id === comment.author_id || currentUser?.id === selectedPost.author_id || userProfile?.role === 'admin' || userProfile?.role === 'president';
 
                         return (
@@ -677,7 +680,7 @@ export default function CommunityPage() {
                               </div>
                             </div>
                             
-                            <p className="text-sm text-text-base leading-relaxed wrap-break-words whitespace-pre-wrap mb-3">
+                            <p className="text-sm text-text-base leading-relaxed wrap-break-word whitespace-pre-wrap mb-3">
                               {renderCommentContent(comment.content)}
                             </p>
 
@@ -698,7 +701,8 @@ export default function CommunityPage() {
                   </div>
                 </div>
 
-                <div className="absolute bottom-0 left-0 right-0 bg-bg-surface border-t border-border-base p-3 lg:p-4 z-20 transition-colors">
+                {/* 🌟 수정 포인트 3: 댓글 입력창 영역 (고정) */}
+                <div className="absolute bottom-0 left-0 right-0 bg-bg-surface border-t border-border-base p-3 lg:p-4 z-20 transition-colors shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
                   <div className="max-w-2xl mx-auto flex items-end gap-2 bg-bg-base border border-border-base rounded-2xl p-1.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary shadow-inner transition-all">
                     <input 
                       ref={commentInputRef}
