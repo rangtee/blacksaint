@@ -553,12 +553,9 @@ export default function CommunityPage() {
         <Dialog as="div" className="relative z-50" onClose={() => setIsDetailModalOpen(false)}>
           <div className="fixed inset-0 bg-black/60 dark:bg-black/80 backdrop-blur-sm transition-opacity" />
           <div className="fixed inset-0 flex items-center justify-center sm:p-4">
-            {/* 🌟 1. 모달 전체 구조를 flex-col로 강제하고 overflow-hidden 부여 */}
-            <Dialog.Panel className="w-full sm:max-w-2xl bg-bg-surface sm:rounded-3xl border border-border-base h-full sm:h-auto max-h-dvh sm:max-h-[90vh] flex flex-col shadow-2xl relative transition-colors overflow-hidden">
-              
+            <Dialog.Panel className="w-full sm:max-w-2xl bg-bg-surface sm:rounded-3xl border border-border-base h-full sm:h-auto max-h-dvh flex flex-col shadow-2xl relative transition-colors overflow-hidden">
               {selectedPost && (<>
-                {/* 🌟 2. 헤더 부분: shrink-0 으로 고정 */}
-                <div className="p-5 lg:p-6 border-b border-border-base shrink-0 bg-bg-surface z-10 transition-colors">
+                <div className="p-5 lg:p-6 border-b border-border-base shrink-0 relative transition-colors bg-bg-surface z-10">
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex-1 pr-4">
                       <span className="inline-block mb-1.5 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider border bg-bg-base text-text-muted border-border-base transition-colors">{getCategoryName(selectedPost.category_id)} {selectedPost.sub_category_id && `> ${getCategoryName(selectedPost.sub_category_id)}`}</span>
@@ -590,8 +587,8 @@ export default function CommunityPage() {
                   </div>
                 </div>
 
-                {/* 🌟 3. 스크롤 본문 영역: flex-1 overflow-y-auto 지정 (pb-24 제거) */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-5 lg:p-6">
+                {/* 🌟 수정 포인트: 하단 pb-32 로 넉넉하게 공간 확보하여 마지막 댓글이 가려지지 않게 함 */}
+                <div className="flex-1 overflow-auto custom-scrollbar p-5 lg:p-6 pb-32">
                   <div className="prose dark:prose-invert max-w-none text-slate-700 dark:text-slate-300 leading-relaxed mb-8 blog-content wrap-break-word overflow-x-hidden" dangerouslySetInnerHTML={{ __html: selectedPost.content }} />
                   <style jsx global>{`.blog-content img { max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--border-color); margin: 16px auto; display: block; object-fit: contain; }`}</style>
                   
@@ -669,13 +666,13 @@ export default function CommunityPage() {
                              {comment.profiles?.profile_image_url ? <img src={comment.profiles.profile_image_url} className="w-full h-full object-cover" alt="author" /> : comment.author_name[0]}
                           </div>
                           
-                          <div className="flex-1 bg-bg-base border border-border-base p-3.5 lg:p-4 rounded-2xl rounded-tl-sm transition-colors overflow-hidden">
+                          <div className="flex-1 bg-bg-base border border-border-base p-3.5 lg:p-4 rounded-2xl rounded-tl-sm transition-colors">
                             <div className="flex justify-between items-start mb-2">
                               <div className="flex items-center gap-2">
                                 <p className="font-bold text-text-base text-sm">{comment.author_name}</p>
                                 <p className="text-[10px] text-text-muted font-medium bg-bg-surface px-1.5 py-0.5 rounded border border-border-base">{comment.author_session}</p>
                               </div>
-                              <div className="flex items-center gap-2 shrink-0">
+                              <div className="flex items-center gap-2">
                                 <p className="text-[10px] text-text-muted">{new Date(comment.created_at).toLocaleDateString()}</p>
                               </div>
                             </div>
@@ -701,8 +698,7 @@ export default function CommunityPage() {
                   </div>
                 </div>
 
-                {/* 🌟 4. 하단 입력창: shrink-0 으로 고정 (absolute 제거) */}
-                <div className="bg-bg-surface border-t border-border-base p-3 lg:p-4 shrink-0 z-20 transition-colors">
+                <div className="absolute bottom-0 left-0 right-0 bg-bg-surface border-t border-border-base p-3 lg:p-4 z-20 transition-colors">
                   <div className="max-w-2xl mx-auto flex items-end gap-2 bg-bg-base border border-border-base rounded-2xl p-1.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary shadow-inner transition-all">
                     <input 
                       ref={commentInputRef}
