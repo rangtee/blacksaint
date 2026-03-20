@@ -4,9 +4,11 @@ import { Inter } from 'next/font/google';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ThemeProvider } from 'next-themes';
-// 🌟 MessageCircle 아이콘을 추가로 불러옵니다.
 import { LayoutDashboard, Users, CalendarDays, MessageSquare, MessageCircle, Shield, LogOut, Search, User, Music, ChevronLeft, Hash, Home } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+// 🌟 아까 만든 NotificationBell 컴포넌트를 불러옵니다.
+// (만약 components 폴더에 안 만들었다면, 먼저 만들어주세요!)
+import NotificationBell from '@/components/NotificationBell';
 import './globals.css';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -17,7 +19,7 @@ const MenuIcon = ({ name }: { name: string }) => {
     team: <Users className="w-5 h-5" />,
     reservation: <CalendarDays className="w-5 h-5" />,
     community: <MessageSquare className="w-5 h-5" />,
-    chat: <MessageCircle className="w-5 h-5" />, // 🌟 채팅 아이콘 맵핑 추가
+    chat: <MessageCircle className="w-5 h-5" />, 
     admin: <Shield className="w-5 h-5" />,
   };
   return iconMap[name] || <Hash className="w-5 h-5" />;
@@ -51,7 +53,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
     fetchData();
 
-    // 🌟 핵심: 프로필(세션, 사진)이 변경되면 상단 헤더도 즉시 업데이트되도록 실시간 감지
     const profileSubscription = supabase.channel('layout_profile_channel')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, (payload) => {
         if (userProfile && payload.new.id === userProfile.id) {
@@ -89,7 +90,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       { path: '/team', name: '팀 목록' }, 
       { path: '/reservation', name: '합주실 예약' }, 
       { path: '/community', name: '커뮤니티' }, 
-      { path: '/chat', name: '메신저' }, // 🌟 상단 타이틀용 이름 추가
+      { path: '/chat', name: '메신저' }, 
       { path: '/admin', name: '관리자 데스크' }, 
       { path: '/mypage', name: '마이페이지' }
     ];
@@ -104,7 +105,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     { path: '/team', name: '팀 목록', icon: 'team' }, 
     { path: '/reservation', name: '합주실 예약', icon: 'reservation' }, 
     { path: '/community', name: '커뮤니티', icon: 'community' },
-    { path: '/chat', name: '메신저', icon: 'chat' } // 🌟 데스크톱 사이드바용 메뉴 추가
+    { path: '/chat', name: '메신저', icon: 'chat' } 
   ];
   if (isPresident) {
     navItems.push({ path: '/admin', name: '관리자 데스크', icon: 'admin' });
@@ -142,7 +143,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   {userTeams.map(team => (
                     <button key={team.id} onClick={() => router.push(`/team?id=${team.id}`)} className="w-full flex items-center gap-3 px-2 py-1.5 rounded-lg text-text-muted hover:text-text-base hover:bg-slate-100 dark:hover:bg-slate-800/50 group transition">
                       <div className="w-6 h-6 rounded-md bg-slate-200 dark:bg-slate-800 group-hover:bg-slate-300 dark:group-hover:bg-slate-700 flex items-center justify-center overflow-hidden font-bold text-text-muted text-[11px] border border-border-base transition-colors">
-                        {/* 팀 사진이 있으면 보여주고 없으면 첫 글자 */}
                         {team.image_url ? <img src={team.image_url} alt="team" className="w-full h-full object-cover" /> : team.name[0]}
                       </div>
                       <span className="text-sm font-medium line-clamp-1">{team.name}</span>
@@ -169,12 +169,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <div className="flex items-center gap-4">
                   <button className="p-2.5 rounded-full bg-slate-100 dark:bg-slate-800/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-text-muted hover:text-text-base transition-colors"><Search className="w-4 h-4"/></button>
                   
+                  {/* 🌟 1. 이 곳에 종 모양 알림 버튼을 배치합니다! */}
+                  <NotificationBell currentUser={userProfile} />
+                  
                   <Link href="/mypage" className="flex items-center gap-3.5 bg-bg-base border border-border-base rounded-full p-1.5 pl-4 shadow-sm hover:bg-slate-100 dark:hover:bg-slate-800/50 transition cursor-pointer group">
                     <div className="text-right">
                       <p className="text-sm font-bold text-text-base leading-tight group-hover:text-primary transition">{userProfile.name}</p>
                       <p className="text-[11px] text-text-muted font-medium">{userProfile.session || '세션 미정'}</p>
                     </div>
-                    {/* 🌟 헤더 우측 상단 내 프로필 사진 연동 */}
                     <div className="w-9 h-9 rounded-full bg-primary flex items-center justify-center overflow-hidden font-black text-lg text-white shadow-md group-hover:scale-105 transition-transform border-2 border-transparent group-hover:border-primary/20">
                       {userProfile.profile_image_url ? (
                          <img src={userProfile.profile_image_url} alt="profile" className="w-full h-full object-cover" />
@@ -193,11 +195,24 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               )}
             </header>
 
+            {/* 모바일 상단 헤더 (알림 기능 포함) */}
+            <header className="md:hidden h-14 shrink-0 border-b border-border-base flex items-center justify-between px-4 bg-bg-surface/80 backdrop-blur-md z-10 sticky top-0 transition-colors duration-300">
+                <h2 className="text-lg font-bold flex items-center gap-2 text-text-base">
+                  {getPageTitle()}
+                </h2>
+                
+                {userProfile && (
+                  <div className="flex items-center gap-2">
+                    {/* 🌟 2. 모바일 헤더에도 종 모양 버튼을 달아줍니다! */}
+                    <NotificationBell currentUser={userProfile} />
+                  </div>
+                )}
+            </header>
+
             <main className="flex-1 overflow-auto custom-scrollbar pb-16 md:pb-0">
               {children}
             </main>
 
-            {/* 🌟 모바일 하단 바: 6개의 아이템이 고르게 분배되도록 flex-1 클래스를 추가했습니다. */}
             <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-bg-surface/95 backdrop-blur-md border-t border-border-base z-50 flex items-center justify-around px-2 pb-safe transition-colors duration-300">
               <Link href="/" className={`flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors ${pathname === '/' ? 'text-primary' : 'text-text-muted hover:text-text-base'}`}>
                 <Home className={`w-6 h-6 ${pathname === '/' ? 'fill-current' : ''}`} />

@@ -11,7 +11,7 @@ interface Booking {
   start: number;
   duration: number;
   team: string;
-  teamColor: string; // 🌟 색상 속성 추가
+  teamColor: string; 
   fullDate: string;
   series_id: string | null;
 }
@@ -49,7 +49,6 @@ export default function TimetablePage() {
     return `${h}:${m}`;
   };
 
-  // 🌟 색상을 받아서 투명도(Opacity)를 적용한 hex 코드로 변환하는 헬퍼 함수
   const getHexWithOpacity = (hex: string, opacity: number) => {
     const cleanHex = hex.replace('#', '');
     const r = parseInt(cleanHex.substring(0, 2), 16);
@@ -62,7 +61,6 @@ export default function TimetablePage() {
     const { data: teamData } = await supabase.from('teams').select('*');
     if (teamData) setTeams(teamData);
 
-    // 🌟 teams 테이블에서 team_color도 함께 가져오도록 수정
     const { data: resData } = await supabase.from('reservations').select('*, teams(name, team_color)');
     
     if (resData) {
@@ -75,7 +73,7 @@ export default function TimetablePage() {
           start: start.getHours() + start.getMinutes() / 60,
           duration: (end.getTime() - start.getTime()) / (1000 * 60 * 60),
           team: res.teams?.name || '삭제된 팀',
-          teamColor: res.teams?.team_color || '#3B82F6', // 🌟 팀 컬러 저장 (없으면 기본 파란색)
+          teamColor: res.teams?.team_color || '#3B82F6', 
           fullDate: res.reservation_date,
           series_id: res.series_id
         };
@@ -175,7 +173,6 @@ export default function TimetablePage() {
   return (
     <div className="flex-1 flex flex-col lg:flex-row h-full bg-bg-base text-text-base overflow-hidden relative transition-colors duration-300">
       
-      {/* 🌟 메인 타임테이블 영역 */}
       <div className="flex-1 flex flex-col h-full overflow-hidden transition-all duration-300">
         
         <header className="pt-8 pb-4 px-4 lg:px-8 border-b border-border-base flex justify-between items-center bg-bg-surface/80 backdrop-blur-md z-20 transition-colors">
@@ -192,10 +189,10 @@ export default function TimetablePage() {
           </button>
         </header>
 
-        <div className="flex-1 overflow-auto p-4 lg:p-8 custom-scrollbar">
+        {/* 🌟 pb-24를 추가하여 모바일 하단 플로팅 버튼/네비바와 표가 겹치지 않게 공간 확보 */}
+        <div className="flex-1 overflow-auto p-4 lg:p-8 pb-24 lg:pb-8 custom-scrollbar">
           <div className="w-full min-w-max bg-bg-surface rounded-xl border border-border-base overflow-hidden shadow-sm dark:shadow-2xl transition-colors">
             
-            {/* 요일 헤더 */}
             <div className="grid grid-cols-8 border-b border-border-base bg-bg-surface text-center transition-colors">
               <div className="p-4 border-r border-border-base text-xs font-bold text-text-muted bg-bg-base/50 uppercase transition-colors">Time</div>
               {weekDays.map((d, i) => (
@@ -206,14 +203,11 @@ export default function TimetablePage() {
               ))}
             </div>
             
-            {/* 시간표 메인 그리드 */}
             <div className="relative grid grid-cols-8">
-              {/* 시간축 (좌측) */}
               <div className="border-r border-border-base col-span-1 bg-bg-surface transition-colors">
                 {hours.map(h => <div key={h} className="h-20 border-b border-border-base flex items-start justify-center pt-2 text-[10px] font-bold text-text-muted transition-colors">{formatTimeToString(h)}</div>)}
               </div>
               
-              {/* 예약 클릭 영역 */}
               <div className="col-span-7 grid grid-cols-7 relative bg-bg-base transition-colors">
                 {weekDays.map((wd, di) => (
                   <div key={di} className="border-r border-border-base last:border-0 relative transition-colors">
@@ -221,7 +215,6 @@ export default function TimetablePage() {
                   </div>
                 ))}
                 
-                {/* 🌟 렌더링된 예약 블록들 (고유 컬러 반영) */}
                 {bookings.filter(b => weekDays.some(wd => wd.fullDate === b.fullDate)).map(b => (
                   <div key={b.id} onClick={(e) => { e.stopPropagation(); setSelectedBooking(b); setIsDetailOpen(true); }} 
                        className="absolute inset-x-1 border-l-4 rounded p-2 z-10 shadow-sm hover:brightness-105 dark:hover:brightness-125 transition cursor-pointer"
@@ -232,9 +225,9 @@ export default function TimetablePage() {
                          height: `calc(${b.duration * 5}rem - 4px)`, 
                          marginLeft: '4px', 
                          marginTop: '2px',
-                         backgroundColor: getHexWithOpacity(b.teamColor, 0.15), // 배경은 투명하게
-                         borderColor: b.teamColor, // 테두리는 진하게
-                         color: b.teamColor // 글씨도 진하게
+                         backgroundColor: getHexWithOpacity(b.teamColor, 0.15),
+                         borderColor: b.teamColor,
+                         color: b.teamColor
                        }}>
                     <p className="text-[10px] font-bold uppercase truncate">{b.team}</p>
                     <p className="text-[9px] opacity-80">{formatTimeToString(b.start)} - {formatTimeToString(b.start+b.duration)}</p>
@@ -246,7 +239,6 @@ export default function TimetablePage() {
         </div>
       </div>
 
-      {/* 🌟 데스크톱 우측 예약 패널 */}
       {isOpen && (
         <aside className="hidden lg:block w-80 bg-bg-surface border-l border-border-base p-6 overflow-y-auto shrink-0 animate-in slide-in-from-right-full duration-300 ease-out shadow-2xl transition-colors">
           <div className="flex justify-between items-center mb-6">
@@ -257,12 +249,11 @@ export default function TimetablePage() {
         </aside>
       )}
 
-      {/* 🌟 모바일 하단 플로팅 버튼 */}
-      <button onClick={() => { setDate(formatDateString(new Date())); setIsOpen(true); }} className="lg:hidden fixed bottom-24 right-6 w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-lg z-40 hover:scale-105 transition-transform">
+      {/* 🌟 bottom-24 에서 bottom-28 로 수정하여 모바일 하단 네비게이션과 겹치지 않게 더 위로 올림 */}
+      <button onClick={() => { setDate(formatDateString(new Date())); setIsOpen(true); }} className="lg:hidden fixed bottom-28 right-6 w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-lg z-40 hover:scale-105 transition-transform">
         <Plus className="w-8 h-8 text-white" />
       </button>
 
-      {/* 🌟 모바일 예약 바텀시트 */}
       {isOpen && (
         <div className="fixed inset-0 z-50 lg:hidden flex items-end justify-center">
           <div className="absolute inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsOpen(false)} />
@@ -276,7 +267,6 @@ export default function TimetablePage() {
         </div>
       )}
 
-      {/* 🌟 기존 예약 상세(취소) 모달 */}
       <Transition appear show={isDetailOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={() => setIsDetailOpen(false)}>
           <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
@@ -323,7 +313,6 @@ export default function TimetablePage() {
   );
 }
 
-// 🌟 폼 입력 컴포넌트
 function ReservationForm({ teamId, setTeamId, date, setDate, startTime, setStartTime, endTime, setEndTime, isRecurring, setIsRecurring, recurringEndDate, setRecurringEndDate, isSubmitting, handleReservation, teams, formatTimeToString, timeSlots }: any) {
   return (
     <div className="space-y-5">

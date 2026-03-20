@@ -155,7 +155,6 @@ export default function TeamManagementPage() {
     }
   };
 
-  // 🌟 팀 수정 모달 열 때 현재 색상 불러오기
   const handleOpenEditTeam = () => {
     if (selectedTeam) {
       setEditTeamName(selectedTeam.name);
@@ -166,7 +165,6 @@ export default function TeamManagementPage() {
     }
   };
 
-  // 🌟 팀 수정 시 색상도 함께 업데이트
   const handleUpdateTeam = async () => {
     if (!editTeamName.trim() || !selectedTeam) return;
     const folderIdToSave = editTeamFolderId === '' ? null : parseInt(editTeamFolderId);
@@ -186,7 +184,6 @@ export default function TeamManagementPage() {
     }
   };
 
-  // 🌟 팀 생성 시 색상도 함께 저장
   const handleCreateTeam = async () => {
     if (!newTeamName.trim()) return;
     const { data: newTeam, error } = await supabase.from('teams').insert([{ 
@@ -338,9 +335,6 @@ export default function TeamManagementPage() {
       <main className="flex-1 overflow-auto custom-scrollbar p-4 lg:p-8">
         <div className="max-w-5xl mx-auto w-full">
           
-          {/* ==========================================
-              뷰 1: 폴더별 팀 목록 
-          ========================================== */}
           {currentView === 'list' && (
             <div className="space-y-10">
               
@@ -362,7 +356,6 @@ export default function TeamManagementPage() {
                         <img src={team.image_url || 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=600&auto=format&fit=crop'} alt={team.name} className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 bg-slate-200 dark:bg-slate-800" />
                         <div className="absolute inset-0 bg-linear-to-t from-black/90 via-black/40 to-transparent opacity-90 group-hover:opacity-80 transition-opacity" />
                         <div className="absolute inset-x-0 bottom-0 p-4 flex flex-col justify-end">
-                          {/* 🌟 리스트에서도 팀 컬러 표시 */}
                           <div className="flex items-center gap-2 mb-1">
                             <div className="w-3 h-3 rounded-full shadow-sm border border-white/20 shrink-0" style={{ backgroundColor: team.team_color || '#3B82F6' }} />
                             <h3 className="text-lg font-black text-white leading-tight line-clamp-1">{team.name}</h3>
@@ -388,7 +381,6 @@ export default function TeamManagementPage() {
                         <img src={team.image_url || 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=600&auto=format&fit=crop'} alt={team.name} className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 bg-slate-200 dark:bg-slate-800" />
                         <div className="absolute inset-0 bg-linear-to-t from-black/90 via-black/40 to-transparent opacity-90 group-hover:opacity-80 transition-opacity" />
                         <div className="absolute inset-x-0 bottom-0 p-4 flex flex-col justify-end">
-                          {/* 🌟 리스트에서도 팀 컬러 표시 */}
                           <div className="flex items-center gap-2 mb-1">
                             <div className="w-3 h-3 rounded-full shadow-sm border border-white/20 shrink-0" style={{ backgroundColor: team.team_color || '#3B82F6' }} />
                             <h3 className="text-lg font-black text-white leading-tight line-clamp-1">{team.name}</h3>
@@ -406,9 +398,6 @@ export default function TeamManagementPage() {
             </div>
           )}
 
-          {/* ==========================================
-              뷰 2: 팀 상세 관리
-          ========================================== */}
           {currentView === 'detail' && selectedTeam && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300 pb-24">
               
@@ -431,30 +420,30 @@ export default function TeamManagementPage() {
                 <div className="p-6 lg:p-8 relative z-10 -mt-8">
                   <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                     <div>
-                      {/* 🌟 타이틀 옆에 고유 색상 뱃지 표시 */}
                       <div className="flex items-center gap-3 mb-2">
                         <div className="w-5 h-5 rounded-full shadow-md border-2 border-white dark:border-slate-900 shrink-0" style={{ backgroundColor: selectedTeam.team_color || '#3B82F6' }} />
                         <h1 className="text-3xl font-black text-text-base drop-shadow-md">{selectedTeam.name}</h1>
                       </div>
-                      <p className="text-text-muted flex items-center gap-2"><Info className="w-4 h-4 text-primary" /> {selectedTeam.bio || '등록된 팀 소개가 없습니다.'}</p>
+                      <p className="text-text-muted flex items-center gap-2"><Info className="w-4 h-4 text-primary shrink-0" /> {selectedTeam.bio || '등록된 팀 소개가 없습니다.'}</p>
                     </div>
-                    <div className="flex flex-wrap gap-3 w-full md:w-auto">
-                      
+                    
+                    {/* 🌟 모바일 반응형 버튼 크기 및 여백 수정 (whitespace-nowrap 추가) */}
+                    <div className="flex flex-wrap gap-2 md:gap-3 w-full md:w-auto mt-4 md:mt-0">
                       {canManageTeam && (
-                        <button onClick={handleDeleteTeam} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-500 border border-rose-200 dark:border-rose-500/20 rounded-xl text-sm font-bold transition">
-                          <Trash2 className="w-4 h-4" /> 팀 해체
+                        <button onClick={handleDeleteTeam} className="flex-1 flex items-center justify-center gap-1.5 md:gap-2 px-2 md:px-4 py-2 md:py-2.5 bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-500 border border-rose-200 dark:border-rose-500/20 rounded-xl text-xs md:text-sm font-bold whitespace-nowrap transition">
+                          <Trash2 className="w-3.5 h-3.5 md:w-4 md:h-4" /> 팀 해체
                         </button>
                       )}
 
                       {canManageTeam && (
-                        <button onClick={handleOpenEditTeam} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-bg-base hover:brightness-95 dark:hover:brightness-110 border border-border-base text-text-base rounded-xl text-sm font-bold transition">
-                          <Edit2 className="w-4 h-4" /> 정보 수정
+                        <button onClick={handleOpenEditTeam} className="flex-1 flex items-center justify-center gap-1.5 md:gap-2 px-2 md:px-4 py-2 md:py-2.5 bg-bg-base hover:brightness-95 dark:hover:brightness-110 border border-border-base text-text-base rounded-xl text-xs md:text-sm font-bold whitespace-nowrap transition">
+                          <Edit2 className="w-3.5 h-3.5 md:w-4 md:h-4" /> 정보 수정
                         </button>
                       )}
 
                       {canAddContent && (
-                        <button onClick={handleOpenInviteModal} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-primary hover:brightness-110 shadow-lg shadow-primary/20 rounded-xl text-sm font-bold text-white transition">
-                          <UserPlus className="w-4 h-4" /> 팀원 추가
+                        <button onClick={handleOpenInviteModal} className="flex-1 flex items-center justify-center gap-1.5 md:gap-2 px-2 md:px-4 py-2 md:py-2.5 bg-primary hover:brightness-110 shadow-lg shadow-primary/20 rounded-xl text-xs md:text-sm font-bold text-white whitespace-nowrap transition">
+                          <UserPlus className="w-3.5 h-3.5 md:w-4 md:h-4" /> 팀원 추가
                         </button>
                       )}
                     </div>
@@ -490,7 +479,7 @@ export default function TeamManagementPage() {
                         </div>
                         
                         {canAddContent && (
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex items-center gap-1 opacity-0 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                             <button onClick={() => handleMoveSong(idx, 'up')} disabled={idx === 0} className="p-1.5 text-text-muted hover:text-text-base hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-lg transition disabled:opacity-30 disabled:hover:bg-transparent">
                               <ChevronUp className="w-4 h-4" />
                             </button>
@@ -549,7 +538,6 @@ export default function TeamManagementPage() {
 
       <Transition appear show={isEditTeamModalOpen} as={Fragment}><Dialog as="div" className="relative z-50" onClose={() => setIsEditTeamModalOpen(false)}><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0"><div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm" /></Transition.Child><div className="fixed inset-0 flex items-center justify-center p-4"><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"><Dialog.Panel className="w-full max-w-md rounded-3xl bg-bg-surface border border-border-base p-6 shadow-2xl transition-colors"><div className="flex justify-between items-center mb-6"><Dialog.Title className="text-xl font-bold text-text-base">팀 정보 수정</Dialog.Title><button onClick={() => setIsEditTeamModalOpen(false)} className="text-text-muted hover:text-text-base transition-colors"><X className="w-5 h-5"/></button></div><div className="space-y-5"><div><label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">팀 이름</label><input type="text" value={editTeamName} onChange={e => setEditTeamName(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors" /></div><div><label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">팀 소개</label><textarea rows={3} value={editTeamBio} onChange={e => setEditTeamBio(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors resize-none custom-scrollbar" /></div>
         
-        {/* 🌟 정보 수정 시 컬러 선택 UI 추가 */}
         <div>
           <label className="text-xs font-bold text-text-muted uppercase mb-2 block">팀 고유 색상</label>
           <div className="flex flex-wrap gap-2">
@@ -577,7 +565,6 @@ export default function TeamManagementPage() {
 
       <Transition appear show={isCreateModalOpen} as={Fragment}><Dialog as="div" className="relative z-50" onClose={() => setIsCreateModalOpen(false)}><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0"><div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm" /></Transition.Child><div className="fixed inset-0 flex items-center justify-center p-4"><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"><Dialog.Panel className="w-full max-w-md rounded-3xl bg-bg-surface border border-border-base p-6 shadow-2xl transition-colors"><Dialog.Title className="text-xl font-bold text-text-base mb-6">새 팀 생성</Dialog.Title><div className="space-y-5"><div><label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">팀 이름</label><input type="text" value={newTeamName} onChange={e => setNewTeamName(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors" /></div><div><label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">팀 소개</label><textarea rows={3} value={newTeamBio} onChange={e => setNewTeamBio(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors resize-none custom-scrollbar" /></div>
         
-        {/* 🌟 팀 생성 시 컬러 선택 UI 추가 */}
         <div>
           <label className="text-xs font-bold text-text-muted uppercase mb-2 block">팀 고유 색상</label>
           <div className="flex flex-wrap gap-2">
