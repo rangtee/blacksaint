@@ -1,23 +1,23 @@
 "use client";
 import React, { useState, useEffect, Fragment, useRef } from 'react';
-import { Users, Download, UserPlus, Search, Shield, ChevronDown, FileSpreadsheet, ToggleLeft, ToggleRight, HardDrive, Image as ImageIcon, Trash2, FolderTree, Folder, Edit2, LayoutList, Plus, X as CloseIcon, UploadCloud, FolderPlus, Loader2 } from 'lucide-react';
+import { Users, Download, UserPlus, Search, Shield, ChevronDown, FileSpreadsheet, ToggleLeft, ToggleRight, HardDrive, Image as ImageIcon, Trash2, FolderTree, Folder, Edit2, LayoutList, Plus, X as CloseIcon, UploadCloud, FolderPlus, Loader2, MessageSquare, ListChecks } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 import { supabase } from '../../lib/supabase';
-import * as XLSX from 'xlsx'; // 🌟 엑셀 라이브러리 불러오기
+import * as XLSX from 'xlsx';
 
-// 🌟 프로필 인터페이스 확장 (재학/휴학 상태 추가)[cite: 5]
 interface Profile { id: string; name: string; student_id: string; session: string; role: string; can_reserve: boolean; can_post: boolean; phone?: string; team_names?: string[]; college?: string; major?: string; grade?: string; enrollment_status?: string; }
 interface BoardCategory { id: number; name: string; parent_id: number | null; is_admin_only: boolean; }
+interface CustomRoom { id: string; name: string; created_at: string; member_count?: number; profiles?: { name: string }; }
 
 export default function AdminPage() {
-  const [activeTab, setActiveTab] = useState<'members' | 'files' | 'folders' | 'categories'>('members');
+  const [activeTab, setActiveTab] = useState<'members' | 'files' | 'folders' | 'categories' | 'chat'>('members');
 
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [storageFiles, setStorageFiles] = useState<any[]>([]);
   const [folders, setFolders] = useState<any[]>([]);
   const [categories, setCategories] = useState<BoardCategory[]>([]);
+  const [customRooms, setCustomRooms] = useState<CustomRoom[]>([]); 
 
-  // 모달 상태 관리
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false);
   const [isBatchOpen, setIsBatchOpen] = useState(false);
@@ -27,6 +27,13 @@ export default function AdminPage() {
   const [newFolderName, setNewFolderName] = useState('');
   const [editFolderId, setEditFolderId] = useState<number | null>(null);
   const [editFolderName, setEditFolderName] = useState('');
+
+  // 폴더에 팀 배정하기 위한 상태
+  const [isAssignTeamsModalOpen, setIsAssignTeamsModalOpen] = useState(false);
+  const [assignFolderId, setAssignFolderId] = useState<number | null>(null);
+  const [assignFolderName, setAssignFolderName] = useState('');
+  const [allTeamsList, setAllTeamsList] = useState<any[]>([]);
+  const [selectedTeamIds, setSelectedTeamIds] = useState<number[]>([]);
 
   const [newCatName, setNewCatName] = useState('');
   const [newCatParentId, setNewCatParentId] = useState<string>('');
@@ -45,7 +52,6 @@ export default function AdminPage() {
 
   const fetchData = async () => {
     setIsLoading(true);
-    // 🌟 profiles 테이블에서 enrollment_status 도 함께 가져옴[cite: 5]
     const { data: pData } = await supabase.from('profiles').select(`id, name, student_id, phone, session, role, can_reserve, can_post, college, major, grade, enrollment_status, team_members ( teams ( name ) )`).order('name');
     if (pData) setProfiles(pData.map((p: any) => ({ ...p, team_names: p.team_members?.map((tm: any) => tm.teams?.name).filter(Boolean) || [] })));
     
@@ -56,6 +62,7 @@ export default function AdminPage() {
     if (sData) setStorageFiles(sData.filter(f => f.name !== '.emptyFolderPlaceholder'));
     
     fetchCategories();
+    fetchCustomRooms();
     setIsLoading(false);
   };
 
@@ -64,47 +71,141 @@ export default function AdminPage() {
     if (data) setCategories(data);
   };
 
+  const fetchCustomRooms = async () => {
+    const { data: roomsData } = await supabase.from('custom_chat_rooms').select('id, name, created_at, created_by, profiles!custom_chat_rooms_created_by_fkey(name)').order('created_at', { ascending: false });
+    if (roomsData) {
+      const roomsWithCounts = await Promise.all(roomsData.map(async (room: any) => {
+        const { count } = await supabase.from('custom_chat_members').select('*', { count: 'exact', head: true }).eq('room_id', room.id);
+        return { ...room, member_count: count || 0 };
+      }));
+      setCustomRooms(roomsWithCounts);
+    }
+  };
+
   useEffect(() => { fetchData(); }, []);
 
   // --- 카테고리 관리 ---
-  const handleSaveCategory = async () => {
+  const handleSaveCategory = async () => { 
     if (!newCatName.trim()) return alert('카테고리 이름을 입력하세요!');
     const payload = { name: newCatName, parent_id: newCatParentId ? parseInt(newCatParentId) : null, is_admin_only: newCatIsAdmin };
     const { error } = await supabase.from('board_categories').insert([payload]);
     if (error) alert('생성 실패: ' + error.message);
     else { setIsCategoryModalOpen(false); setNewCatName(''); setNewCatParentId(''); setNewCatIsAdmin(false); fetchCategories(); }
   };
-
-  const handleDeleteCategory = async (catId: number, catName: string) => {
+  
+  const handleDeleteCategory = async (catId: number, catName: string) => { 
     if (!confirm(`[${catName}] 카테고리를 삭제하시겠습니까?\n서브 카테고리도 함께 삭제될 수 있습니다.`)) return;
     await supabase.from('board_categories').delete().eq('id', catId);
     fetchCategories();
   };
 
   // --- 팀 폴더 관리 ---
-  const handleCreateFolder = async () => {
+  const handleCreateFolder = async () => { 
     if (!newFolderName.trim()) return alert('폴더 이름을 입력해주세요!');
     const { error } = await supabase.from('team_folders').insert([{ name: newFolderName }]);
     if (error) alert('폴더 생성 실패: ' + error.message);
     else { setNewFolderName(''); setIsCreateFolderModalOpen(false); fetchData(); }
   };
-
-  const openEditFolderModal = (id: number, currentName: string) => {
+  
+  const openEditFolderModal = (id: number, currentName: string) => { 
     setEditFolderId(id); setEditFolderName(currentName); setIsEditFolderModalOpen(true);
   };
-
-  const handleEditFolder = async () => {
+  
+  const handleEditFolder = async () => { 
     if (!editFolderName.trim() || !editFolderId) return alert('변경할 이름을 입력해주세요!');
     const { error } = await supabase.from('team_folders').update({ name: editFolderName }).eq('id', editFolderId);
     if (error) alert('폴더 이름 변경 실패: ' + error.message);
     else { setIsEditFolderModalOpen(false); setEditFolderId(null); setEditFolderName(''); fetchData(); }
   };
-
-  const handleDeleteFolder = async (folderId: number, folderName: string) => {
+  
+  const handleDeleteFolder = async (folderId: number, folderName: string) => { 
     if (!confirm(`🚨 [${folderName}] 폴더를 삭제하시겠습니까?\n(폴더 안에 있던 팀들은 삭제되지 않고 '미분류' 상태로 변경됩니다.)`)) return;
     const { error } = await supabase.from('team_folders').delete().eq('id', folderId);
     if (error) alert('폴더 삭제 실패: ' + error.message);
     else fetchData();
+  };
+
+  // 폴더에 팀 배정 모달 열기
+  const openAssignTeamsModal = async (folderId: number, folderName: string) => {
+    setIsLoading(true);
+    const { data } = await supabase.from('teams').select('id, name, folder_id').order('name');
+    if (data) {
+      setAllTeamsList(data);
+      setSelectedTeamIds(data.filter(t => t.folder_id === folderId).map(t => t.id));
+    }
+    setAssignFolderId(folderId);
+    setAssignFolderName(folderName);
+    setIsAssignTeamsModalOpen(true);
+    setIsLoading(false);
+  };
+
+  // 팀 배정 저장하기
+  const handleSaveTeamAssignments = async () => {
+    if (!assignFolderId) return;
+    setIsLoading(true);
+    try {
+      const teamsToRemove = allTeamsList.filter(t => t.folder_id === assignFolderId && !selectedTeamIds.includes(t.id));
+      for (const t of teamsToRemove) {
+        await supabase.from('teams').update({ folder_id: null }).eq('id', t.id);
+      }
+      for (const tId of selectedTeamIds) {
+        await supabase.from('teams').update({ folder_id: assignFolderId }).eq('id', tId);
+      }
+      alert('팀 배정이 완료되었습니다!');
+      setIsAssignTeamsModalOpen(false);
+      fetchData(); 
+    } catch (err: any) {
+      alert('배정 중 오류가 발생했습니다: ' + err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const exportFolderDataToExcel = async (folderId: number, folderName: string) => {
+    try {
+      setIsLoading(true);
+      const { data: teamsData, error: teamsError } = await supabase.from('teams').select(`id, name, setlist, team_members ( profiles ( name, session ) )`).eq('folder_id', folderId);
+      if (teamsError) throw teamsError;
+      if (!teamsData || teamsData.length === 0) { alert('이 폴더에는 등록된 팀이 없습니다.'); setIsLoading(false); return; }
+
+      const rows: any[] = [];
+      const headers = ['팀 이름', '팀 구성원', '곡 제목', '아티스트', '곡 시간(분)', '팀 총 공연 시간(분)'];
+
+      teamsData.forEach((team: any) => {
+        const membersString = team.team_members.map((tm: any) => `${tm.profiles?.name}(${tm.profiles?.session || '미정'})`).join(', ');
+        let setlists = []; let totalTeamTime = 0;
+        try {
+          if (team.setlist) {
+            setlists = JSON.parse(team.setlist);
+            totalTeamTime = setlists.reduce((acc: number, cur: any) => acc + (Number(cur.duration) || 0), 0);
+          }
+        } catch (e) { console.error(e); }
+
+        if (setlists.length === 0) {
+          rows.push([team.name, membersString, '등록된 곡 없음', '-', '-', 0]);
+        } else {
+          rows.push([team.name, membersString, setlists[0].title || '-', setlists[0].artist || '-', setlists[0].duration || 0, totalTeamTime]);
+          for (let i = 1; i < setlists.length; i++) {
+            rows.push(['', '', setlists[i].title || '-', setlists[i].artist || '-', setlists[i].duration || 0, '']);
+          }
+        }
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, folderName.substring(0, 31));
+      ws['!cols'] = [{ wch: 20 }, { wch: 40 }, { wch: 25 }, { wch: 20 }, { wch: 12 }, { wch: 20 }];
+      XLSX.writeFile(wb, `동아리_공연팀목록_${folderName}.xlsx`);
+    } catch (error: any) { alert('엑셀 파일 생성 중 오류가 발생했습니다: ' + error.message); } finally { setIsLoading(false); }
+  };
+
+  const handleDeleteCustomRoom = async (roomId: string, roomName: string) => { 
+    if (!confirm(`🚨 경고: [${roomName}] 단체 채팅방을 강제로 삭제하시겠습니까?\n방에 있는 모든 대화 내용이 즉시 영구 삭제되며, 방에 속한 인원들도 모두 쫓겨납니다.`)) return;
+    try {
+      const { error } = await supabase.from('custom_chat_rooms').delete().eq('id', roomId);
+      if (error) throw error;
+      alert(`[${roomName}] 단체방이 삭제되었습니다.`); fetchCustomRooms(); 
+    } catch (err: any) { alert('방 삭제 중 오류가 발생했습니다: ' + err.message); }
   };
 
   // --- 부원 관리 함수 ---
@@ -136,7 +237,6 @@ export default function AdminPage() {
     } finally { setIsSubmitting(false); }
   };
 
-  // 🌟 일괄 등록 (.xlsx 엑셀 파일 업로드 처리)[cite: 5]
   const handleBatchUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
@@ -158,8 +258,6 @@ export default function AdminPage() {
         const workbook = XLSX.read(data, { type: 'array' });
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
-        
-        // 엑셀 시트를 JSON 배열로 변환
         const parsedData = XLSX.utils.sheet_to_json(worksheet) as any[];
         
         if (parsedData.length === 0) {
@@ -168,8 +266,7 @@ export default function AdminPage() {
         }
 
         setUploadProgress({ current: 0, total: parsedData.length, isUploading: true });
-        let successCount = 0;
-        let failCount = 0;
+        let successCount = 0; let failCount = 0;
 
         for (let i = 0; i < parsedData.length; i++) {
           const row = parsedData[i];
@@ -181,103 +278,45 @@ export default function AdminPage() {
           const phone = String(row['연락처'] || '').replace(/-/g, '').trim(); 
           const enrollmentStatus = String(row['재학/휴학'] || '재학').trim(); 
 
-          if (!name || !studentId || !phone) {
-            console.warn(`행 무시됨 (필수값 누락): ${JSON.stringify(row)}`);
-            failCount++;
-            continue;
-          }
-
+          if (!name || !studentId || !phone) { failCount++; continue; }
           const pseudoEmail = `${studentId}@bandon.com`;
           
           try {
-            const { data: authData, error: authError } = await supabase.auth.signUp({
-              email: pseudoEmail,
-              password: phone,
-            });
-
-            if (authError) {
-              console.error(`[${name}] 계정 생성 실패:`, authError.message);
-              failCount++;
-            } else if (authData.user) {
+            const { data: authData, error: authError } = await supabase.auth.signUp({ email: pseudoEmail, password: phone });
+            if (authError) failCount++;
+            else if (authData.user) {
               const { error: profileError } = await supabase.from('profiles').upsert({
-                id: authData.user.id,
-                name: name,
-                student_id: studentId,
-                phone: phone,
-                college: college,
-                major: major,
-                grade: grade,
-                enrollment_status: enrollmentStatus, // 🌟 재학/휴학 반영
-                role: 'member', 
-                session: '미정',
-                can_reserve: true,
-                can_post: true
+                id: authData.user.id, name: name, student_id: studentId, phone: phone, college: college, major: major, grade: grade, enrollment_status: enrollmentStatus, role: 'member', session: '미정', can_reserve: true, can_post: true
               });
-
               if (profileError) throw profileError;
               successCount++;
             }
-          } catch (err) {
-            console.error(`[${name}] 프로필 저장 실패:`, err);
-            failCount++;
-          }
-          
+          } catch (err) { failCount++; }
           setUploadProgress(prev => ({ ...prev, current: prev.current + 1 }));
         }
-
         alert(`일괄 등록이 완료되었습니다!\n✅ 성공: ${successCount}명\n❌ 실패/중복: ${failCount}명`);
-      } catch (err) {
-        alert('파일을 읽는 중 오류가 발생했습니다. 파일이 손상되었거나 올바른 엑셀이 아닙니다.');
-      } finally {
-        setUploadProgress({ current: 0, total: 0, isUploading: false });
-        if (fileInputRef.current) fileInputRef.current.value = '';
-        setIsBatchOpen(false);
-        fetchData();
-      }
+      } catch (err) { alert('파일을 읽는 중 오류가 발생했습니다. 파일이 손상되었거나 올바른 엑셀이 아닙니다.'); } 
+      finally { setUploadProgress({ current: 0, total: 0, isUploading: false }); if (fileInputRef.current) fileInputRef.current.value = ''; setIsBatchOpen(false); fetchData(); }
     };
-
     reader.readAsArrayBuffer(file);
   };
 
-  // 🌟 지정된 양식에 맞춰 XLSX 다운로드 템플릿 생성[cite: 5]
   const downloadTemplate = () => {
-    const ws_data = [
-      ['성명', '단대', '학과(부)', '학번', '학년', '연락처', '재학/휴학'],
-      ['홍길동', '공과대학', '컴퓨터공학부', '20240001', '3', '01012345678', '재학']
-    ];
+    const ws_data = [ ['성명', '단대', '학과(부)', '학번', '학년', '연락처', '재학/휴학'], ['홍길동', '공과대학', '컴퓨터공학부', '20240001', '3', '01012345678', '재학'] ];
     const ws = XLSX.utils.aoa_to_sheet(ws_data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "회원등록양식");
-    
-    // 열 너비 조절
     ws['!cols'] = [{ wch: 10 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 8 }, { wch: 15 }, { wch: 12 }];
-    
     XLSX.writeFile(wb, `동아리_부원일괄등록_양식.xlsx`);
   };
 
-  // 🌟 멤버 리스트 내보내기도 XLSX 포맷으로 변경[cite: 5]
   const exportToExcel = () => {
     const headers = ['성명', '단대', '학과(부)', '학번', '학년', '재학/휴학', '연락처', '등급', '소속 팀', '주 세션'];
-    const rows = profiles.map(p => [ 
-      p.name, 
-      p.college || '', 
-      p.major || '', 
-      p.student_id, 
-      p.grade || '', 
-      p.enrollment_status || '재학', // 재학/휴학 추가
-      p.phone || '', 
-      p.role === 'president' ? '회장' : p.role === 'leader' ? '팀장' : '부원', 
-      p.team_names?.join(' / ') || '소속 없음', 
-      p.session || '미정'
-    ]);
-    
+    const rows = profiles.map(p => [ p.name, p.college || '', p.major || '', p.student_id, p.grade || '', p.enrollment_status || '재학', p.phone || '', p.role === 'president' ? '회장' : p.role === 'leader' ? '팀장' : '부원', p.team_names?.join(' / ') || '소속 없음', p.session || '미정' ]);
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "부원명단");
-    
-    // 열 너비 자동화 느낌으로 고정 세팅
     ws['!cols'] = [{ wch: 10 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 8 }, { wch: 10 }, { wch: 15 }, { wch: 8 }, { wch: 25 }, { wch: 15 }];
-
     XLSX.writeFile(wb, `동아리_부원명단_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
@@ -296,16 +335,11 @@ export default function AdminPage() {
 
   const handleDeleteMember = async (userId: string, userName: string) => {
     if (!confirm(`🚨 경고: [${userName}] 부원을 정말 영구 삭제하시겠습니까?\n\n이 부원이 작성한 글, 댓글, 투표 기록 등 모든 데이터가 함께 삭제되며 복구할 수 없습니다.`)) return;
-
     try {
       const { error } = await supabase.from('profiles').delete().eq('id', userId);
       if (error) throw error;
-      
-      alert(`[${userName}] 부원이 삭제되었습니다.`);
-      fetchData(); 
-    } catch (err: any) {
-      alert('부원 삭제 중 오류가 발생했습니다: ' + err.message);
-    }
+      alert(`[${userName}] 부원이 삭제되었습니다.`); fetchData(); 
+    } catch (err: any) { alert('부원 삭제 중 오류가 발생했습니다: ' + err.message); }
   };
 
   const handleDeleteFile = async (fileName: string) => {
@@ -324,7 +358,6 @@ export default function AdminPage() {
     return <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">부원</span>;
   };
 
-  // 재학/휴학 상태 뱃지
   const getStatusBadge = (status: string) => {
     if (status === '휴학') return <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-bold px-1.5 py-0.5 rounded">휴학</span>;
     return <span className="bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold px-1.5 py-0.5 rounded">재학</span>;
@@ -332,26 +365,23 @@ export default function AdminPage() {
 
   return (
     <div className="flex-1 flex flex-col h-full bg-bg-base text-text-base font-sans overflow-hidden transition-colors duration-300 relative">
-      
       <header className="h-16 shrink-0 border-b border-border-base flex items-center justify-between px-6 lg:px-8 bg-bg-surface/80 backdrop-blur-md z-10 transition-colors">
         <h2 className="text-xl font-bold flex items-center gap-2 text-text-base"><Shield className="w-5 h-5 text-primary" /> 관리자 데스크 (회장 전용)</h2>
       </header>
 
-      {/* 관리자 메뉴 탭 */}
       <div className="flex px-6 lg:px-8 border-b border-border-base bg-bg-surface shrink-0 overflow-x-auto custom-scrollbar transition-colors">
         <button onClick={() => setActiveTab('members')} className={`px-4 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${activeTab === 'members' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-base'}`}><Users className="w-4 h-4" /> 부원 관리</button>
         <button onClick={() => setActiveTab('folders')} className={`px-4 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${activeTab === 'folders' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-base'}`}><FolderTree className="w-4 h-4" /> 팀 폴더 관리</button>
-        <button onClick={() => setActiveTab('categories')} className={`px-4 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${activeTab === 'categories' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-base'}`}><LayoutList className="w-4 h-4" /> 게시판 카테고리</button>
-        <button onClick={() => setActiveTab('files')} className={`px-4 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${activeTab === 'files' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-base'}`}><HardDrive className="w-4 h-4" /> 스토리지 파일</button>
+        <button onClick={() => setActiveTab('chat')} className={`px-4 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${activeTab === 'chat' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-base'}`}><MessageSquare className="w-4 h-4" /> 단체방 관리</button>
+        <button onClick={() => setActiveTab('categories')} className={`px-4 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${activeTab === 'categories' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-base'}`}><LayoutList className="w-4 h-4" /> 게시판 관리</button>
+        <button onClick={() => setActiveTab('files')} className={`px-4 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${activeTab === 'files' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-base'}`}><HardDrive className="w-4 h-4" /> 파일 관리</button>
       </div>
 
       <main className="flex-1 overflow-auto custom-scrollbar p-6 lg:p-8">
         <div className="max-w-6xl mx-auto space-y-6 pb-20">
           
-          {/* 탭 1: 부원 관리 */}
           {activeTab === 'members' && (
             <div className="space-y-6 animate-in fade-in duration-300">
-              {/* 검색 및 버튼 영역 */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-bg-surface p-4 rounded-2xl border border-border-base shadow-sm transition-colors">
                 <div className="flex items-center bg-bg-base border border-border-base rounded-xl px-3 py-2 w-full md:w-80 focus-within:border-primary transition-colors">
                   <Search className="w-4 h-4 text-text-muted mr-2" />
@@ -370,7 +400,6 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              {/* 테이블 영역 (단대, 학과, 상태 보이도록 수정) */}
               <div className="bg-bg-surface border border-border-base rounded-2xl overflow-hidden shadow-sm dark:shadow-xl transition-colors">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse min-w-200">
@@ -435,7 +464,6 @@ export default function AdminPage() {
             </div>
           )}
 
-          {/* 탭 2: 팀 폴더 관리 */}
           {activeTab === 'folders' && (
             <div className="space-y-6 animate-in fade-in duration-300">
                <div className="bg-bg-surface p-6 rounded-2xl border border-border-base shadow-sm transition-colors">
@@ -466,13 +494,24 @@ export default function AdminPage() {
                              {folder.teams?.[0]?.count || 0} 팀
                            </span>
                          </div>
-                         <div className="flex items-center justify-end gap-2 pt-4 border-t border-border-base">
-                           <button onClick={() => openEditFolderModal(folder.id, folder.name)} className="p-2 text-text-muted hover:text-primary hover:bg-primary/10 rounded-lg transition-colors" title="이름 변경">
-                             <Edit2 className="w-4 h-4" />
-                           </button>
-                           <button onClick={() => handleDeleteFolder(folder.id, folder.name)} className="p-2 text-text-muted hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-colors" title="삭제">
-                             <Trash2 className="w-4 h-4" />
-                           </button>
+                         <div className="flex items-center justify-between pt-4 border-t border-border-base">
+                           <div className="flex gap-1.5">
+                             <button onClick={() => openAssignTeamsModal(folder.id, folder.name)} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-xs font-bold rounded-lg border border-indigo-200 dark:border-indigo-500/20 transition-colors">
+                               <ListChecks className="w-3.5 h-3.5" /> 팀 배정
+                             </button>
+                             <button onClick={() => exportFolderDataToExcel(folder.id, folder.name)} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 text-xs font-bold rounded-lg border border-emerald-200 dark:border-emerald-500/20 transition-colors">
+                               <Download className="w-3.5 h-3.5" /> 엑셀 다운
+                             </button>
+                           </div>
+                           
+                           <div className="flex gap-1">
+                             <button onClick={() => openEditFolderModal(folder.id, folder.name)} className="p-2 text-text-muted hover:text-primary hover:bg-primary/10 rounded-lg transition-colors" title="이름 변경">
+                               <Edit2 className="w-4 h-4" />
+                             </button>
+                             <button onClick={() => handleDeleteFolder(folder.id, folder.name)} className="p-2 text-text-muted hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-colors" title="삭제">
+                               <Trash2 className="w-4 h-4" />
+                             </button>
+                           </div>
                          </div>
                        </div>
                      ))
@@ -482,7 +521,52 @@ export default function AdminPage() {
             </div>
           )}
 
-          {/* 탭 3: 카테고리 관리 */}
+          {activeTab === 'chat' && (
+            <div className="space-y-6 animate-in fade-in duration-300">
+               <div className="bg-bg-surface p-6 rounded-2xl border border-border-base shadow-sm transition-colors">
+                 <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4 transition-colors">
+                   <div>
+                     <h3 className="text-lg font-bold text-text-base flex items-center gap-2"><MessageSquare className="w-5 h-5 text-primary" /> 개설된 단체방 목록</h3>
+                     <p className="text-xs text-text-muted mt-1 transition-colors">동아리 부원들이 개설한 단체 채팅방 목록입니다. 필요시 강제로 삭제할 수 있습니다.</p>
+                   </div>
+                   <button onClick={fetchCustomRooms} className="px-4 py-2 bg-bg-base border border-border-base text-text-base text-sm font-bold rounded-lg transition-colors hover:bg-slate-100 dark:hover:bg-slate-800">
+                     새로고침
+                   </button>
+                 </div>
+
+                 <div className="border border-border-base rounded-xl overflow-hidden transition-colors">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="bg-slate-100 dark:bg-slate-800/50 border-b border-border-base transition-colors">
+                        <th className="p-4 text-xs font-bold text-text-muted tracking-wider">채팅방 이름</th>
+                        <th className="p-4 text-xs font-bold text-text-muted tracking-wider text-center">개설자</th>
+                        <th className="p-4 text-xs font-bold text-text-muted tracking-wider text-center">참여 인원</th>
+                        <th className="p-4 text-xs font-bold text-text-muted tracking-wider text-center">개설일</th>
+                        <th className="p-4 text-xs font-bold text-text-muted tracking-wider text-center w-24">관리</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border-base">
+                      {customRooms.length === 0 ? <tr><td colSpan={5} className="p-8 text-center text-text-muted transition-colors">개설된 단체방이 없습니다.</td></tr> : 
+                       customRooms.map((room) => (
+                        <tr key={room.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 border-b border-border-base transition-colors last:border-0">
+                          <td className="p-4 text-sm font-bold text-text-base transition-colors">{room.name}</td>
+                          <td className="p-4 text-sm text-text-muted text-center transition-colors">{room.profiles?.name || '알 수 없음'}</td>
+                          <td className="p-4 text-sm text-text-base text-center font-medium transition-colors">{room.member_count}명</td>
+                          <td className="p-4 text-xs text-text-muted text-center transition-colors">{new Date(room.created_at).toLocaleDateString()}</td>
+                          <td className="p-4 text-center transition-colors">
+                            <button onClick={() => handleDeleteCustomRoom(room.id, room.name)} className="p-2 text-text-muted hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-colors" title="방 강제 폭파">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+               </div>
+            </div>
+          )}
+
           {activeTab === 'categories' && (
             <div className="space-y-6 animate-in fade-in duration-300">
               <div className="bg-bg-surface p-6 rounded-2xl border border-border-base shadow-sm transition-colors">
@@ -528,7 +612,6 @@ export default function AdminPage() {
             </div>
           )}
 
-          {/* 탭 4: 스토리지 파일 */}
           {activeTab === 'files' && (
             <div className="space-y-6 animate-in fade-in duration-300">
               <div className="bg-bg-surface p-6 rounded-2xl border border-border-base shadow-sm transition-colors">
@@ -562,7 +645,6 @@ export default function AdminPage() {
         </div>
       </main>
 
-      {/* 모달 1: 카테고리 생성 */}
       <Transition appear show={isCategoryModalOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={() => setIsCategoryModalOpen(false)}>
           <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
@@ -599,7 +681,6 @@ export default function AdminPage() {
         </Dialog>
       </Transition>
 
-      {/* 모달 2: 수동 개별 등록 */}
       <Transition appear show={isAddMemberModalOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={() => setIsAddMemberModalOpen(false)}>
           <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
@@ -638,7 +719,6 @@ export default function AdminPage() {
         </Dialog>
       </Transition>
 
-      {/* 🌟 모달 3: 일괄 등록 (.xlsx 엑셀 반영 완료) */}
       <Transition appear show={isBatchOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={() => setIsBatchOpen(false)}>
           <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
@@ -648,7 +728,6 @@ export default function AdminPage() {
             <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
               <Dialog.Panel className="w-full max-w-md rounded-3xl bg-bg-surface border border-border-base p-6 shadow-2xl transition-colors relative overflow-hidden">
                 
-                {/* 로딩 오버레이 */}
                 {uploadProgress.isUploading && (
                   <div className="absolute inset-0 bg-bg-surface/90 backdrop-blur-sm z-20 flex flex-col items-center justify-center">
                     <Loader2 className="w-10 h-10 text-primary animate-spin mb-4" />
@@ -687,7 +766,6 @@ export default function AdminPage() {
         </Dialog>
       </Transition>
 
-      {/* 모달 4: 폴더 생성/수정 */}
       <Transition appear show={isCreateFolderModalOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={() => setIsCreateFolderModalOpen(false)}>
           <div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm" />
@@ -728,6 +806,58 @@ export default function AdminPage() {
               </div>
               <div className="flex gap-3 mt-8">
                 <button onClick={handleEditFolder} className="w-full py-4 bg-primary hover:brightness-110 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition">수정 완료</button>
+              </div>
+            </Dialog.Panel>
+          </div>
+        </Dialog>
+      </Transition>
+
+      {/* 🌟 모달: 팀 배정 */}
+      <Transition appear show={isAssignTeamsModalOpen} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setIsAssignTeamsModalOpen(false)}>
+          <div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm" />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Dialog.Panel className="w-full max-w-md rounded-3xl bg-bg-surface border border-border-base p-6 shadow-2xl transition-colors">
+              <div className="flex justify-between items-center mb-6">
+                <Dialog.Title className="text-xl font-bold text-text-base flex items-center gap-2">
+                  <ListChecks className="w-5 h-5 text-indigo-500" /> [{assignFolderName}] 팀 배정
+                </Dialog.Title>
+                <button onClick={() => setIsAssignTeamsModalOpen(false)} className="text-text-muted hover:text-text-base transition p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/50"><CloseIcon className="w-5 h-5"/></button>
+              </div>
+
+              <div className="mb-4 bg-bg-base border border-border-base p-3 rounded-xl text-sm text-text-muted">
+                이 폴더에 넣을 팀들을 체크해주세요. <br/>
+                <span className="text-xs">(다른 폴더에 속해있던 팀을 체크하면 이 폴더로 소속이 옮겨집니다.)</span>
+              </div>
+
+              <div className="max-h-60 overflow-y-auto custom-scrollbar border border-border-base rounded-xl p-2 bg-bg-base space-y-1">
+                {allTeamsList.length === 0 ? (
+                  <div className="text-center py-4 text-sm text-text-muted">생성된 팀이 없습니다.</div>
+                ) : (
+                  allTeamsList.map(team => (
+                    <label key={team.id} className="flex items-center gap-3 p-3 hover:bg-bg-surface rounded-lg cursor-pointer transition-colors border border-transparent hover:border-border-base">
+                      <input 
+                        type="checkbox" 
+                        checked={selectedTeamIds.includes(team.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedTeamIds([...selectedTeamIds, team.id]);
+                          else setSelectedTeamIds(selectedTeamIds.filter(id => id !== team.id));
+                        }}
+                        className="w-4 h-4 accent-primary" 
+                      />
+                      <span className="text-sm font-bold text-text-base flex-1">{team.name}</span>
+                      {team.folder_id && team.folder_id !== assignFolderId && !selectedTeamIds.includes(team.id) && (
+                        <span className="text-[10px] text-text-muted bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">다른 폴더 소속</span>
+                      )}
+                    </label>
+                  ))
+                )}
+              </div>
+
+              <div className="flex gap-3 mt-8">
+                <button onClick={handleSaveTeamAssignments} disabled={isLoading} className="w-full py-4 bg-primary hover:brightness-110 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition disabled:opacity-50">
+                  {isLoading ? '저장 중...' : '선택한 팀 넣기'}
+                </button>
               </div>
             </Dialog.Panel>
           </div>
