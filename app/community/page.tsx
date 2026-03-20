@@ -116,8 +116,8 @@ export default function CommunityPage() {
         });
         setPosts(mappedPosts);
       }
-    } catch (err) { 
-      console.error('게시글 불러오기 에러:', err); 
+    } catch (err: any) { 
+      console.error('게시글 불러오기 에러:', err.message || err); 
     } finally { 
       setIsLoading(false); 
     }
@@ -141,9 +141,8 @@ export default function CommunityPage() {
         });
         setComments(mappedComments);
       }
-    } catch (err) { 
-      // 🌟 에러가 발생해도 앱이 터지지 않도록 안전하게 처리
-      console.error('댓글 불러오기 에러:', err); 
+    } catch (err: any) { 
+      console.error('댓글 불러오기 에러:', err.message || err); 
     }
   };
 
@@ -162,8 +161,8 @@ export default function CommunityPage() {
       } else {
         setCurrentPoll(null); setCurrentPollOptions([]); setCurrentPollVotes([]); setSelectedOptionIds([]);
       }
-    } catch (err) {
-      console.error('투표 데이터 불러오기 에러:', err);
+    } catch (err: any) {
+      console.error('투표 데이터 불러오기 에러:', err.message || err);
     }
   };
 
@@ -554,14 +553,16 @@ export default function CommunityPage() {
         <Dialog as="div" className="relative z-50" onClose={() => setIsDetailModalOpen(false)}>
           <div className="fixed inset-0 bg-black/60 dark:bg-black/80 backdrop-blur-sm transition-opacity" />
           <div className="fixed inset-0 flex items-center justify-center sm:p-4">
+            {/* 🌟 1. 모달 전체 구조를 flex-col로 강제하고 overflow-hidden 부여 */}
             <Dialog.Panel className="w-full sm:max-w-2xl bg-bg-surface sm:rounded-3xl border border-border-base h-full sm:h-auto max-h-dvh sm:max-h-[90vh] flex flex-col shadow-2xl relative transition-colors overflow-hidden">
+              
               {selectedPost && (<>
-                <div className="p-5 lg:p-6 border-b border-border-base shrink-0 relative transition-colors bg-bg-surface z-10">
+                {/* 🌟 2. 헤더 부분: shrink-0 으로 고정 */}
+                <div className="p-5 lg:p-6 border-b border-border-base shrink-0 bg-bg-surface z-10 transition-colors">
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex-1 pr-4">
                       <span className="inline-block mb-1.5 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider border bg-bg-base text-text-muted border-border-base transition-colors">{getCategoryName(selectedPost.category_id)} {selectedPost.sub_category_id && `> ${getCategoryName(selectedPost.sub_category_id)}`}</span>
-                      {/* 🌟 CSS 클래스명 정정 완료: break-words */}
-                      <h3 className="text-xl lg:text-2xl font-black text-text-base leading-snug wrap-break-words">{selectedPost.title}</h3>
+                      <h3 className="text-xl lg:text-2xl font-black text-text-base leading-snug wrap-break-word">{selectedPost.title}</h3>
                     </div>
                     <button onClick={() => setIsDetailModalOpen(false)} className="text-text-muted hover:text-text-base shrink-0 transition-colors p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/50"><X className="w-6 h-6 lg:w-5 lg:h-5"/></button>
                   </div>
@@ -589,9 +590,9 @@ export default function CommunityPage() {
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-auto custom-scrollbar p-5 lg:p-6 pb-24">
-                  {/* 🌟 CSS 클래스명 정정 완료: break-words */}
-                  <div className="prose dark:prose-invert max-w-none text-slate-700 dark:text-slate-300 leading-relaxed mb-8 blog-content wrap-break-words overflow-x-hidden" dangerouslySetInnerHTML={{ __html: selectedPost.content }} />
+                {/* 🌟 3. 스크롤 본문 영역: flex-1 overflow-y-auto 지정 (pb-24 제거) */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-5 lg:p-6">
+                  <div className="prose dark:prose-invert max-w-none text-slate-700 dark:text-slate-300 leading-relaxed mb-8 blog-content wrap-break-word overflow-x-hidden" dangerouslySetInnerHTML={{ __html: selectedPost.content }} />
                   <style jsx global>{`.blog-content img { max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--border-color); margin: 16px auto; display: block; object-fit: contain; }`}</style>
                   
                   {currentPoll && (
@@ -637,8 +638,7 @@ export default function CommunityPage() {
                                       }
                                     </div>
                                   )}
-                                  {/* 🌟 CSS 클래스명 정정 완료: break-words */}
-                                  <span className={`text-sm wrap-break-words line-clamp-2 ${isSelected ? 'text-primary font-black' : 'text-text-base font-medium'}`}>{opt.content}</span>
+                                  <span className={`text-sm wrap-break-word line-clamp-2 ${isSelected ? 'text-primary font-black' : 'text-text-base font-medium'}`}>{opt.content}</span>
                                 </div>
                                 {showResults && <span className="text-[10px] lg:text-xs font-bold text-text-muted bg-bg-base px-2 py-1 rounded-md shrink-0 ml-2">{percentage}% ({voteCount}표)</span>}
                               </div>
@@ -669,19 +669,18 @@ export default function CommunityPage() {
                              {comment.profiles?.profile_image_url ? <img src={comment.profiles.profile_image_url} className="w-full h-full object-cover" alt="author" /> : comment.author_name[0]}
                           </div>
                           
-                          <div className="flex-1 bg-bg-base border border-border-base p-3.5 lg:p-4 rounded-2xl rounded-tl-sm transition-colors">
+                          <div className="flex-1 bg-bg-base border border-border-base p-3.5 lg:p-4 rounded-2xl rounded-tl-sm transition-colors overflow-hidden">
                             <div className="flex justify-between items-start mb-2">
                               <div className="flex items-center gap-2">
                                 <p className="font-bold text-text-base text-sm">{comment.author_name}</p>
                                 <p className="text-[10px] text-text-muted font-medium bg-bg-surface px-1.5 py-0.5 rounded border border-border-base">{comment.author_session}</p>
                               </div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 shrink-0">
                                 <p className="text-[10px] text-text-muted">{new Date(comment.created_at).toLocaleDateString()}</p>
                               </div>
                             </div>
                             
-                            {/* 🌟 CSS 클래스명 정정 완료: break-words */}
-                            <p className="text-sm text-text-base leading-relaxed wrap-break-words whitespace-pre-wrap mb-3">
+                            <p className="text-sm text-text-base leading-relaxed wrap-break-word whitespace-pre-wrap mb-3">
                               {renderCommentContent(comment.content)}
                             </p>
 
@@ -702,7 +701,8 @@ export default function CommunityPage() {
                   </div>
                 </div>
 
-                <div className="absolute bottom-0 left-0 right-0 bg-bg-surface border-t border-border-base p-3 lg:p-4 z-20 transition-colors">
+                {/* 🌟 4. 하단 입력창: shrink-0 으로 고정 (absolute 제거) */}
+                <div className="bg-bg-surface border-t border-border-base p-3 lg:p-4 shrink-0 z-20 transition-colors">
                   <div className="max-w-2xl mx-auto flex items-end gap-2 bg-bg-base border border-border-base rounded-2xl p-1.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary shadow-inner transition-all">
                     <input 
                       ref={commentInputRef}

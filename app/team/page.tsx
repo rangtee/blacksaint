@@ -11,7 +11,6 @@ const TEAM_COLORS = [
   '#8B5CF6', '#A855F7', '#D946EF', '#EC4899', '#F43F5E', '#94A3B8'
 ];
 
-// --- 인터페이스 정의 (team_color 추가) ---
 interface TeamFolder { id: number; name: string; }
 interface Team { id: number; name: string; bio: string | null; image_url: string | null; folder_id: number | null; memberCount?: number; team_color?: string; }
 interface Song { id: number; team_id: number; title: string; artist: string; duration_seconds: number; sort_order?: number; }
@@ -30,7 +29,6 @@ export default function TeamManagementPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [globalRole, setGlobalRole] = useState<string>('member');
 
-  // 모달 상태
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
   const [isAddSongModalOpen, setIsAddSongModalOpen] = useState(false);
@@ -40,10 +38,9 @@ export default function TeamManagementPage() {
   
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
 
-  // 폼 상태 (색상 상태 추가)
   const [newTeamName, setNewTeamName] = useState('');
   const [newTeamBio, setNewTeamBio] = useState('');
-  const [newTeamColor, setNewTeamColor] = useState(TEAM_COLORS[10]); // 기본 파란색
+  const [newTeamColor, setNewTeamColor] = useState(TEAM_COLORS[10]); 
   
   const [editTeamName, setEditTeamName] = useState('');
   const [editTeamBio, setEditTeamBio] = useState('');
@@ -427,7 +424,6 @@ export default function TeamManagementPage() {
                       <p className="text-text-muted flex items-center gap-2"><Info className="w-4 h-4 text-primary shrink-0" /> {selectedTeam.bio || '등록된 팀 소개가 없습니다.'}</p>
                     </div>
                     
-                    {/* 🌟 모바일 반응형 버튼 크기 및 여백 수정 (whitespace-nowrap 추가) */}
                     <div className="flex flex-wrap gap-2 md:gap-3 w-full md:w-auto mt-4 md:mt-0">
                       {canManageTeam && (
                         <button onClick={handleDeleteTeam} className="flex-1 flex items-center justify-center gap-1.5 md:gap-2 px-2 md:px-4 py-2 md:py-2.5 bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-500 border border-rose-200 dark:border-rose-500/20 rounded-xl text-xs md:text-sm font-bold whitespace-nowrap transition">
@@ -536,8 +532,10 @@ export default function TeamManagementPage() {
       {/* 모달들... */}
       <Transition appear show={isCreateFolderModalOpen} as={Fragment}><Dialog as="div" className="relative z-50" onClose={() => setIsCreateFolderModalOpen(false)}><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0"><div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm" /></Transition.Child><div className="fixed inset-0 flex items-center justify-center p-4"><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"><Dialog.Panel className="w-full max-w-sm rounded-3xl bg-bg-surface border border-border-base p-6 shadow-2xl transition-colors"><Dialog.Title className="text-xl font-bold text-text-base mb-6">새 폴더 생성</Dialog.Title><div className="space-y-5"><div><label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">폴더 이름</label><input type="text" placeholder="예: 1학기 공연조" value={newFolderName} onChange={e => setNewFolderName(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors" /></div></div><div className="flex gap-3 mt-8"><button onClick={() => setIsCreateFolderModalOpen(false)} className="flex-1 py-3.5 bg-bg-base hover:brightness-95 dark:hover:brightness-110 border border-border-base text-text-base font-bold rounded-xl transition-colors">취소</button><button onClick={handleCreateFolder} className="flex-1 py-3.5 bg-primary hover:brightness-110 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition">만들기</button></div></Dialog.Panel></Transition.Child></div></Dialog></Transition>
 
+      {/* 🌟 팀 정보 수정 모달 (컬러 팔레트 포함) */}
       <Transition appear show={isEditTeamModalOpen} as={Fragment}><Dialog as="div" className="relative z-50" onClose={() => setIsEditTeamModalOpen(false)}><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0"><div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm" /></Transition.Child><div className="fixed inset-0 flex items-center justify-center p-4"><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"><Dialog.Panel className="w-full max-w-md rounded-3xl bg-bg-surface border border-border-base p-6 shadow-2xl transition-colors"><div className="flex justify-between items-center mb-6"><Dialog.Title className="text-xl font-bold text-text-base">팀 정보 수정</Dialog.Title><button onClick={() => setIsEditTeamModalOpen(false)} className="text-text-muted hover:text-text-base transition-colors"><X className="w-5 h-5"/></button></div><div className="space-y-5"><div><label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">팀 이름</label><input type="text" value={editTeamName} onChange={e => setEditTeamName(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors" /></div><div><label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">팀 소개</label><textarea rows={3} value={editTeamBio} onChange={e => setEditTeamBio(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors resize-none custom-scrollbar" /></div>
         
+        {/* 컬러 선택 영역 */}
         <div>
           <label className="text-xs font-bold text-text-muted uppercase mb-2 block">팀 고유 색상</label>
           <div className="flex flex-wrap gap-2">
@@ -563,6 +561,7 @@ export default function TeamManagementPage() {
         )}
         </div><button onClick={handleUpdateTeam} className="w-full mt-8 py-3.5 bg-primary hover:brightness-110 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition">수정 완료</button></Dialog.Panel></Transition.Child></div></Dialog></Transition>
 
+      {/* 🌟 새 팀 생성 모달 (기존과 동일하지만, 색상 관련 상태가 추가되어 있음) */}
       <Transition appear show={isCreateModalOpen} as={Fragment}><Dialog as="div" className="relative z-50" onClose={() => setIsCreateModalOpen(false)}><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0"><div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm" /></Transition.Child><div className="fixed inset-0 flex items-center justify-center p-4"><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"><Dialog.Panel className="w-full max-w-md rounded-3xl bg-bg-surface border border-border-base p-6 shadow-2xl transition-colors"><Dialog.Title className="text-xl font-bold text-text-base mb-6">새 팀 생성</Dialog.Title><div className="space-y-5"><div><label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">팀 이름</label><input type="text" value={newTeamName} onChange={e => setNewTeamName(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors" /></div><div><label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">팀 소개</label><textarea rows={3} value={newTeamBio} onChange={e => setNewTeamBio(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors resize-none custom-scrollbar" /></div>
         
         <div>
