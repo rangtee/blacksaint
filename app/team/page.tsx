@@ -1,10 +1,9 @@
 "use client";
-import React, { useState, useEffect, Fragment, useRef } from 'react';
-import { Plus, Users, ChevronLeft, MoreVertical, Edit2, Shield, UserMinus, UserPlus, Info, Camera, Music, Trash2, X, Clock, Search, FolderPlus, Folder, ChevronUp, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect, useRef, Fragment } from 'react';
+import { Plus, Users, ChevronLeft, MoreVertical, Edit2, Shield, UserMinus, UserPlus, Info, Camera, Music, Trash2, X, Clock, Search, FolderPlus, Folder, ChevronUp, ChevronDown, Loader2, Play, Pause } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 import { supabase } from '../../lib/supabase';
 
-// 🌟 15개 이상의 팀 컬러 팔레트 정의
 const TEAM_COLORS = [
   '#EF4444', '#F97316', '#F59E0B', '#EAB308', '#84CC16', '#22C55E',
   '#10B981', '#14B8A6', '#06B6D4', '#0EA5E9', '#3B82F6', '#6366F1',
@@ -47,11 +46,6 @@ export default function TeamManagementPage() {
   const [editTeamFolderId, setEditTeamFolderId] = useState<string>('');
   const [editTeamColor, setEditTeamColor] = useState('');
   
-  const [newSongTitle, setNewSongTitle] = useState('');
-  const [newSongArtist, setNewSongArtist] = useState('');
-  const [newSongMinutes, setNewSongMinutes] = useState('');
-  const [newSongSeconds, setNewSongSeconds] = useState('');
-  
   const [newFolderName, setNewFolderName] = useState('');
 
   const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
@@ -59,6 +53,40 @@ export default function TeamManagementPage() {
 
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [songInputMode, setSongInputMode] = useState<'search' | 'manual'>('search');
+  const [songSearchTerm, setSongSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  
+  const [newSongTitle, setNewSongTitle] = useState('');
+  const [newSongArtist, setNewSongArtist] = useState('');
+  const [newSongMinutes, setNewSongMinutes] = useState('');
+  const [newSongSeconds, setNewSongSeconds] = useState('');
+
+  // 🌟 미리듣기 기능 상태
+  const [playingTrackId, setPlayingTrackId] = useState<number | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // 🌟 오디오 객체 초기화 및 정리
+  useEffect(() => {
+    audioRef.current = new Audio();
+    audioRef.current.onended = () => setPlayingTrackId(null);
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+      }
+    };
+  }, []);
+
+  // 🌟 모달이 닫히면 재생 중이던 음악 정지
+  useEffect(() => {
+    if (!isAddSongModalOpen && audioRef.current) {
+      audioRef.current.pause();
+      setPlayingTrackId(null);
+    }
+  }, [isAddSongModalOpen]);
 
   useEffect(() => {
     const init = async () => {
@@ -181,13 +209,11 @@ export default function TeamManagementPage() {
     }
   };
 
-  // 🌟 새 팀 생성 (생성 시 자동으로 팀장 권한 부여 및 전체 프로필 승급)
   const handleCreateTeam = async () => {
     if (!newTeamName.trim()) return;
     if (!currentUser) return alert('로그인 정보가 없습니다. 다시 로그인해 주세요.');
 
     try {
-      // 1. 팀 먼저 생성
       const { data: newTeam, error: teamError } = await supabase.from('teams').insert([{ 
         name: newTeamName, 
         bio: newTeamBio,
@@ -196,7 +222,6 @@ export default function TeamManagementPage() {
 
       if (teamError) throw teamError;
 
-      // 2. 방금 만든 팀에 로그인한 본인을 'Leader' 권한으로 즉시 등록
       if (newTeam && currentUser) {
         const { error: memberError } = await supabase.from('team_members').insert([{ 
           team_id: newTeam.id, 
@@ -206,7 +231,6 @@ export default function TeamManagementPage() {
         
         if (memberError) throw memberError;
 
-        // 3. 🌟 유저의 전체 권한(role)이 'member'라면 'leader'(팀장)로 승급시킴
         if (globalRole === 'member') {
           await supabase.from('profiles').update({ role: 'leader' }).eq('id', currentUser.id);
           setGlobalRole('leader'); 
@@ -244,7 +268,6 @@ export default function TeamManagementPage() {
     setIsActionSheetOpen(false); fetchMembers(selectedTeam.id); fetchTeams();
   };
 
-  // 🌟 팀원에게 팀장(Leader) 역할을 위임할 때도 글로벌 권한 승급 적용
   const handleChangeRole = async () => {
     if (!selectedMember || !selectedTeam) return;
     
@@ -258,14 +281,12 @@ export default function TeamManagementPage() {
     const { error } = await supabase.from('team_members').update({ role: newRole }).eq('id', selectedMember.id);
     if (error) alert('역할 변경 실패: ' + error.message);
     else {
-      // 🌟 새로운 팀장으로 승급시켰다면, 그 사람의 글로벌(profiles) 권한도 leader로 올려줌
       if (newRole === 'Leader') {
          const { data: pData } = await supabase.from('profiles').select('role').eq('id', selectedMember.user_id).single();
          if (pData && pData.role === 'member') {
             await supabase.from('profiles').update({ role: 'leader' }).eq('id', selectedMember.user_id);
          }
       }
-      
       alert('역할이 성공적으로 변경되었습니다.');
       setIsActionSheetOpen(false);
       fetchMembers(selectedTeam.id);
@@ -285,7 +306,68 @@ export default function TeamManagementPage() {
     } finally { setIsUploading(false); }
   };
 
-  const handleAddSong = async () => {
+  const handleSearchDeezer = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!songSearchTerm.trim()) return;
+    
+    setIsSearching(true);
+    try {
+      const res = await fetch(`/api/deezer?q=${encodeURIComponent(songSearchTerm)}`);
+      const data = await res.json();
+      if (data.data) {
+        setSearchResults(data.data.slice(0, 10));
+      } else {
+        setSearchResults([]);
+      }
+    } catch (error) {
+      alert('음원 검색에 실패했습니다. 직접 입력을 사용해 주세요.');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // 🌟 미리듣기 재생 및 정지 토글 함수
+  const togglePlayPreview = (e: React.MouseEvent, track: any) => {
+    e.stopPropagation(); // 부모 요소의 onClick(곡 추가 이벤트) 방지
+    
+    if (!audioRef.current) return;
+    if (!track.preview) {
+      alert('미리듣기를 제공하지 않는 곡입니다.');
+      return;
+    }
+
+    if (playingTrackId === track.id) {
+      // 현재 곡이 재생 중이면 정지
+      audioRef.current.pause();
+      setPlayingTrackId(null);
+    } else {
+      // 다른 곡을 재생
+      audioRef.current.pause();
+      audioRef.current.src = track.preview;
+      audioRef.current.play();
+      setPlayingTrackId(track.id);
+    }
+  };
+
+  const handleSelectDeezerSong = async (track: any) => {
+    if (!selectedTeam) return;
+    const newSortOrder = songs.length;
+
+    await supabase.from('team_songs').insert([{ 
+      team_id: selectedTeam.id, 
+      title: track.title, 
+      artist: track.artist.name, 
+      duration_seconds: track.duration,
+      sort_order: newSortOrder
+    }]);
+
+    setIsAddSongModalOpen(false);
+    setSongSearchTerm('');
+    setSearchResults([]);
+    fetchSongs(selectedTeam.id);
+  };
+
+  const handleAddSongManual = async () => {
     if (!newSongTitle.trim() || !newSongArtist.trim() || !selectedTeam) return;
     const totalSeconds = (parseInt(newSongMinutes || '0') * 60) + parseInt(newSongSeconds || '0');
     const newSortOrder = songs.length;
@@ -488,7 +570,7 @@ export default function TeamManagementPage() {
                       {songs.length > 0 && <div className="flex items-center gap-1.5 bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-500 border border-amber-200 dark:border-amber-500/20 px-2 py-1 rounded-md text-xs font-bold"><Clock className="w-3 h-3" /> 예상 {totalSetlistMinutes}분 {remainingSetlistSeconds.toString().padStart(2, '0')}초</div>}
                       
                       {canAddContent && (
-                        <button onClick={() => setIsAddSongModalOpen(true)} className="text-xs font-bold text-primary hover:text-text-base transition flex items-center gap-1 bg-primary/10 px-2 py-1 rounded-md"><Plus className="w-3 h-3" /> 곡 추가</button>
+                        <button onClick={() => { setIsAddSongModalOpen(true); setSongInputMode('search'); setSearchResults([]); setSongSearchTerm(''); }} className="text-xs font-bold text-primary hover:text-text-base transition flex items-center gap-1 bg-primary/10 px-2 py-1 rounded-md"><Plus className="w-3 h-3" /> 곡 추가</button>
                       )}
                     </div>
                   </div>
@@ -609,7 +691,85 @@ export default function TeamManagementPage() {
 
         </div><div className="flex gap-3 mt-8"><button onClick={() => setIsCreateModalOpen(false)} className="flex-1 py-3.5 bg-bg-base hover:brightness-95 dark:hover:brightness-110 border border-border-base text-text-base font-bold rounded-xl transition-colors">취소</button><button onClick={handleCreateTeam} className="flex-1 py-3.5 bg-primary hover:brightness-110 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition">생성하기</button></div></Dialog.Panel></Transition.Child></div></Dialog></Transition>
       
-      <Transition appear show={isAddSongModalOpen} as={Fragment}><Dialog as="div" className="relative z-50" onClose={() => setIsAddSongModalOpen(false)}><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0"><div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm" /></Transition.Child><div className="fixed inset-0 flex items-center justify-center p-4"><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"><Dialog.Panel className="w-full max-w-sm rounded-3xl bg-bg-surface border border-border-base p-6 shadow-2xl transition-colors"><div className="flex justify-between items-center mb-6"><Dialog.Title className="text-lg font-bold text-text-base flex items-center gap-2"><Music className="w-5 h-5 text-primary" /> 합주곡 추가</Dialog.Title><button onClick={() => setIsAddSongModalOpen(false)} className="text-text-muted hover:text-text-base transition-colors"><X className="w-5 h-5"/></button></div><div className="space-y-4"><div><label className="text-[10px] font-bold text-text-muted uppercase mb-1 block">아티스트</label><input type="text" value={newSongArtist} onChange={e => setNewSongArtist(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors" /></div><div><label className="text-[10px] font-bold text-text-muted uppercase mb-1 block">곡 제목</label><input type="text" value={newSongTitle} onChange={e => setNewSongTitle(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors" /></div><div><label className="text-[10px] font-bold text-text-muted uppercase mb-1 block">곡 길이</label><div className="flex items-center gap-3"><div className="flex-1 flex items-center bg-bg-base border border-border-base rounded-xl pr-4 transition-colors"><input type="number" value={newSongMinutes} onChange={e => setNewSongMinutes(e.target.value)} className="w-full bg-transparent p-4 text-text-base outline-none text-right" /><span className="text-text-muted font-bold ml-1">분</span></div><div className="flex-1 flex items-center bg-bg-base border border-border-base rounded-xl pr-4 transition-colors"><input type="number" value={newSongSeconds} onChange={e => setNewSongSeconds(e.target.value)} className="w-full bg-transparent p-4 text-text-base outline-none text-right" /><span className="text-text-muted font-bold ml-1">초</span></div></div></div></div><button onClick={handleAddSong} className="w-full py-4 mt-8 bg-primary hover:brightness-110 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition">추가하기</button></Dialog.Panel></Transition.Child></div></Dialog></Transition>
+      {/* 🌟 합주곡 추가 모달 */}
+      <Transition appear show={isAddSongModalOpen} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setIsAddSongModalOpen(false)}>
+          <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0"><div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm" /></Transition.Child>
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+              <Dialog.Panel className="w-full max-w-md rounded-3xl bg-bg-surface border border-border-base p-6 shadow-2xl transition-colors flex flex-col max-h-[85vh]">
+                <div className="flex justify-between items-center mb-6 shrink-0">
+                  <Dialog.Title className="text-lg font-bold text-text-base flex items-center gap-2"><Music className="w-5 h-5 text-primary" /> 합주곡 추가</Dialog.Title>
+                  <button onClick={() => setIsAddSongModalOpen(false)} className="text-text-muted hover:text-text-base transition-colors"><X className="w-5 h-5"/></button>
+                </div>
+
+                <div className="flex bg-bg-base p-1 rounded-xl mb-6 shrink-0 border border-border-base">
+                  <button onClick={() => setSongInputMode('search')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${songInputMode === 'search' ? 'bg-bg-surface text-primary shadow-sm' : 'text-text-muted'}`}>음원 검색</button>
+                  <button onClick={() => setSongInputMode('manual')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${songInputMode === 'manual' ? 'bg-bg-surface text-primary shadow-sm' : 'text-text-muted'}`}>직접 입력</button>
+                </div>
+
+                <div className="overflow-y-auto custom-scrollbar flex-1 pr-1">
+                  {songInputMode === 'search' ? (
+                    <div className="space-y-4">
+                      <form onSubmit={handleSearchDeezer} className="flex items-center gap-2">
+                        <div className="flex-1 flex items-center bg-bg-base border border-border-base rounded-xl px-4 py-3 focus-within:border-primary transition-colors">
+                          <Search className="w-4 h-4 text-text-muted mr-2" />
+                          <input type="text" placeholder="노래 제목이나 가수명 입력..." value={songSearchTerm} onChange={e => setSongSearchTerm(e.target.value)} className="bg-transparent text-sm w-full outline-none text-text-base" />
+                        </div>
+                        <button type="submit" disabled={isSearching || !songSearchTerm.trim()} className="px-4 py-3 bg-primary text-white font-bold rounded-xl disabled:opacity-50 hover:brightness-110 transition shrink-0">
+                          {isSearching ? <Loader2 className="w-5 h-5 animate-spin" /> : '검색'}
+                        </button>
+                      </form>
+
+                      <div className="space-y-2 mt-4">
+                        {searchResults.length === 0 && !isSearching && songSearchTerm && (
+                          <div className="text-center py-8 text-sm text-text-muted">검색 결과가 없습니다. 직접 입력을 이용해주세요.</div>
+                        )}
+                        {searchResults.map((track) => (
+                          <div key={track.id} className="flex items-center gap-3 p-3 bg-bg-base border border-border-base rounded-xl hover:border-primary/50 transition group">
+                            
+                            {/* 🌟 앨범 커버를 미리듣기 버튼으로 사용 */}
+                            <div className="relative w-12 h-12 shrink-0 cursor-pointer shadow-sm" onClick={(e) => togglePlayPreview(e, track)}>
+                              <img src={track.album.cover_small} alt="cover" className="w-full h-full rounded-lg object-cover" />
+                              <div className={`absolute inset-0 bg-black/40 rounded-lg flex items-center justify-center transition-opacity ${playingTrackId === track.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                                {playingTrackId === track.id ? <Pause className="w-5 h-5 text-white" /> : <Play className="w-5 h-5 text-white ml-0.5" />}
+                              </div>
+                            </div>
+
+                            <div className="flex-1 min-w-0 text-left cursor-pointer" onClick={() => handleSelectDeezerSong(track)}>
+                              <h4 className="font-bold text-text-base text-sm truncate group-hover:text-primary transition">{track.title}</h4>
+                              <p className="text-xs text-text-muted truncate">{track.artist.name}</p>
+                            </div>
+                            <div className="text-[10px] text-text-muted font-bold shrink-0 bg-bg-surface px-2 py-1 rounded">
+                              {Math.floor(track.duration / 60)}:{String(track.duration % 60).padStart(2, '0')}
+                            </div>
+                            <button onClick={() => handleSelectDeezerSong(track)} className="opacity-0 group-hover:opacity-100 bg-primary/10 text-primary p-1.5 rounded-lg ml-1 transition">
+                              <Plus className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div><label className="text-[10px] font-bold text-text-muted uppercase mb-1 block">아티스트</label><input type="text" value={newSongArtist} onChange={e => setNewSongArtist(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors" /></div>
+                      <div><label className="text-[10px] font-bold text-text-muted uppercase mb-1 block">곡 제목</label><input type="text" value={newSongTitle} onChange={e => setNewSongTitle(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors" /></div>
+                      <div>
+                        <label className="text-[10px] font-bold text-text-muted uppercase mb-1 block">곡 길이</label>
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 flex items-center bg-bg-base border border-border-base rounded-xl pr-4 transition-colors"><input type="number" value={newSongMinutes} onChange={e => setNewSongMinutes(e.target.value)} className="w-full bg-transparent p-4 text-text-base outline-none text-right" /><span className="text-text-muted font-bold ml-1">분</span></div>
+                          <div className="flex-1 flex items-center bg-bg-base border border-border-base rounded-xl pr-4 transition-colors"><input type="number" value={newSongSeconds} onChange={e => setNewSongSeconds(e.target.value)} className="w-full bg-transparent p-4 text-text-base outline-none text-right" /><span className="text-text-muted font-bold ml-1">초</span></div>
+                        </div>
+                      </div>
+                      <button onClick={handleAddSongManual} className="w-full py-4 mt-4 bg-primary hover:brightness-110 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition">직접 추가하기</button>
+                    </div>
+                  )}
+                </div>
+              </Dialog.Panel>
+            </Transition.Child>
+          </div>
+        </Dialog>
+      </Transition>
       
       <Transition appear show={isInviteModalOpen} as={Fragment}><Dialog as="div" className="relative z-50" onClose={() => setIsInviteModalOpen(false)}><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0"><div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm" /></Transition.Child><div className="fixed inset-0 flex items-center justify-center p-4"><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"><Dialog.Panel className="w-full max-w-sm rounded-3xl bg-bg-surface border border-border-base p-6 shadow-2xl transition-colors"><div className="flex justify-between items-center mb-4"><Dialog.Title className="text-xl font-bold text-text-base flex items-center gap-2"><UserPlus className="w-5 h-5 text-primary"/> 팀원 직접 추가</Dialog.Title><button onClick={() => setIsInviteModalOpen(false)} className="text-text-muted hover:text-text-base transition-colors"><X className="w-5 h-5"/></button></div><div className="flex items-center bg-bg-base border border-border-base rounded-xl px-4 py-3 mb-4 focus-within:border-primary transition-colors"><Search className="w-4 h-4 text-text-muted mr-2 shrink-0" /><input type="text" placeholder="이름이나 학번으로 검색..." value={inviteSearchTerm} onChange={e => setInviteSearchTerm(e.target.value)} className="bg-transparent text-sm text-text-base w-full outline-none" /></div><div className="max-h-60 overflow-y-auto custom-scrollbar space-y-2 mb-4 pr-1">{availableProfiles.length === 0 ? <div className="text-center p-4 text-text-muted text-sm transition-colors">추가할 수 있는 부원이 없습니다.</div> : availableProfiles.map(p => (<div key={p.id} className="flex items-center justify-between p-3 bg-bg-base border border-border-base rounded-xl transition-colors"><div><div className="font-bold text-text-base text-sm">{p.name} <span className="text-xs text-text-muted font-normal ml-1">{p.student_id}</span></div><div className="text-[11px] text-text-muted">{p.session || '세션 미정'}</div></div><button onClick={() => handleAddMemberDirectly(p.id, p.name)} className="px-3 py-1.5 bg-primary/10 dark:bg-primary/20 text-primary hover:bg-primary hover:text-white text-xs font-bold rounded-lg transition">추가</button></div>))}</div><button onClick={() => setIsInviteModalOpen(false)} className="w-full py-3 bg-bg-base hover:brightness-95 dark:hover:brightness-110 border border-border-base text-text-base font-bold rounded-xl transition-colors">닫기</button></Dialog.Panel></Transition.Child></div></Dialog></Transition>
       

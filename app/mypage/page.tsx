@@ -21,7 +21,7 @@ export default function IntegratedProfilePage() {
   const [editPhone, setEditPhone] = useState('');
   const [editPosition, setEditPosition] = useState('');
   const [editSession, setEditSession] = useState(''); 
-  const [editGeneration, setEditGeneration] = useState(''); // 🌟 기수 상태 추가
+  const [editGeneration, setEditGeneration] = useState(''); 
   
   const [editCollege, setEditCollege] = useState('');
   const [editMajor, setEditMajor] = useState('');
@@ -55,9 +55,9 @@ export default function IntegratedProfilePage() {
       setProfile(profileData);
       setEditName(profileData.name || ''); 
       setEditPhone(profileData.phone || '');
-      setEditPosition(profileData.position || '미정');
+      setEditPosition(profileData.position || ''); // 미정 대신 빈 문자열로 초기화
       setEditSession(profileData.session || '미정'); 
-      setEditGeneration(profileData.generation || ''); // 🌟 기수 세팅
+      setEditGeneration(profileData.generation || ''); 
       setEditCollege(profileData.college || '');
       setEditMajor(profileData.major || '');
       setEditGrade(profileData.grade || '');
@@ -93,7 +93,7 @@ export default function IntegratedProfilePage() {
       enrollment_status: editEnrollmentStatus,
       position: editPosition, 
       session: editSession,
-      generation: editGeneration // 🌟 기수 저장
+      generation: editGeneration 
     }).eq('id', profile.id);
     
     setIsSubmitting(false);
@@ -172,7 +172,11 @@ export default function IntegratedProfilePage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 relative z-10">
               <div className="flex flex-col gap-1 bg-bg-base border border-border-base p-4 rounded-2xl transition-colors">
                 <div className="flex items-center gap-2 text-text-muted text-xs font-bold uppercase tracking-wider mb-1"><Music className="w-3.5 h-3.5" /> 포지션</div>
-                <span className="font-bold text-text-base text-sm">{profile.position || '미정'}</span>
+                {/* 🌟 주 세션과 세부 포지션 조건 강화 (공백만 있는 경우 처리) */}
+                <span className="font-bold text-text-base text-sm">
+                  {profile.session && profile.session !== '미정' ? profile.session : '포지션 미정'}
+                  {profile.position && profile.position.trim() !== '' && profile.position !== '미정' ? ` - ${profile.position.trim()}` : ''}
+                </span>
               </div>
               <div className="flex flex-col gap-1 bg-bg-base border border-border-base p-4 rounded-2xl transition-colors">
                 <div className="flex items-center gap-2 text-text-muted text-xs font-bold uppercase tracking-wider mb-1"><GraduationCap className="w-3.5 h-3.5" /> 학적 상태</div>
@@ -260,7 +264,7 @@ export default function IntegratedProfilePage() {
                   <div className="text-center py-12 text-text-muted border border-dashed border-border-base rounded-2xl bg-bg-base flex flex-col items-center transition-colors"><FileText className="w-8 h-8 opacity-20 mb-2" /><p className="text-sm">아직 작성한 게시글이 없습니다.</p></div>
                 ) : (
                   myPosts.map(post => (
-                    <div key={post.id} className="flex items-center justify-between p-4 bg-bg-base border border-border-base rounded-2xl hover:border-slate-300 dark:hover:border-slate-500 transition cursor-pointer group">
+                    <div key={post.id} onClick={() => router.push(`/community?postId=${post.id}`)} className="flex items-center justify-between p-4 bg-bg-base border border-border-base rounded-2xl hover:border-slate-300 dark:hover:border-slate-500 transition cursor-pointer group">
                       <div className="flex-1 pr-4">
                         <div className="flex items-center gap-2 mb-1.5">
                           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800/50 text-text-muted border border-border-base uppercase transition-colors">{post.type === 'free' ? '자유' : post.type === 'repair' ? '수리' : post.type === 'notice' ? '공지' : '커뮤니티'}</span>

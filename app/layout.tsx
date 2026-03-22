@@ -4,10 +4,8 @@ import { Inter } from 'next/font/google';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ThemeProvider } from 'next-themes';
-import { LayoutDashboard, Users, CalendarDays, MessageSquare, MessageCircle, Shield, LogOut, Search, User, Music, ChevronLeft, Hash, Home } from 'lucide-react';
+import { LayoutDashboard, Users, CalendarDays, MessageSquare, MessageCircle, Shield, LogOut, User, Music, ChevronLeft, Hash, Home } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-// 🌟 아까 만든 NotificationBell 컴포넌트를 불러옵니다.
-// (만약 components 폴더에 안 만들었다면, 먼저 만들어주세요!)
 import NotificationBell from '@/components/NotificationBell';
 import './globals.css';
 
@@ -167,9 +165,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
               {userProfile ? (
                 <div className="flex items-center gap-4">
-                  <button className="p-2.5 rounded-full bg-slate-100 dark:bg-slate-800/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-text-muted hover:text-text-base transition-colors"><Search className="w-4 h-4"/></button>
+                  {/* 🌟 기존 돋보기 버튼 제거됨 */}
                   
-                  {/* 🌟 1. 이 곳에 종 모양 알림 버튼을 배치합니다! */}
+                  {/* 🌟 통합 알림 벨 */}
                   <NotificationBell currentUser={userProfile} />
                   
                   <Link href="/mypage" className="flex items-center gap-3.5 bg-bg-base border border-border-base rounded-full p-1.5 pl-4 shadow-sm hover:bg-slate-100 dark:hover:bg-slate-800/50 transition cursor-pointer group">
@@ -195,7 +193,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               )}
             </header>
 
-            {/* 모바일 상단 헤더 (알림 기능 포함) */}
             <header className="md:hidden h-14 shrink-0 border-b border-border-base flex items-center justify-between px-4 bg-bg-surface/80 backdrop-blur-md z-10 sticky top-0 transition-colors duration-300">
                 <h2 className="text-lg font-bold flex items-center gap-2 text-text-base">
                   {getPageTitle()}
@@ -203,7 +200,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 
                 {userProfile && (
                   <div className="flex items-center gap-2">
-                    {/* 🌟 2. 모바일 헤더에도 종 모양 버튼을 달아줍니다! */}
                     <NotificationBell currentUser={userProfile} />
                   </div>
                 )}

@@ -11,9 +11,9 @@ interface Post {
   category_id: number; sub_category_id: number | null; 
   author_name: string; author_session: string; author_id?: string; 
   created_at: string; comment_count: number; 
-  profiles?: { profile_image_url: string }; 
+  profiles?: { profile_image_url: string; generation?: string }; 
 }
-interface Comment { id: number; content: string; author_name: string; author_session: string; created_at: string; author_id?: string; profiles?: { profile_image_url: string }; }
+interface Comment { id: number; content: string; author_name: string; author_session: string; created_at: string; author_id?: string; profiles?: { profile_image_url: string; generation?: string }; }
 
 const BlogEditor = dynamic(() => import('./BlogEditor'), { ssr: false });
 
@@ -28,6 +28,10 @@ const ToggleRow = ({ label, description, checked, onChange }: any) => (
     </button>
   </div>
 );
+
+const formatNameWithGen = (name: string, gen?: string | null) => {
+  return gen && gen.trim() !== '' ? `${name}(${gen})` : name;
+};
 
 export default function CommunityPage() {
   const [categories, setCategories] = useState<BoardCategory[]>([]);
@@ -103,7 +107,7 @@ export default function CommunityPage() {
         
       if (postsError) throw postsError;
 
-      const { data: profilesData } = await supabase.from('profiles').select('id, profile_image_url');
+      const { data: profilesData } = await supabase.from('profiles').select('id, profile_image_url, generation');
 
       if (postsData) {
         const mappedPosts = postsData.map((p: any) => {
@@ -111,7 +115,7 @@ export default function CommunityPage() {
           return { 
             ...p, 
             comment_count: p.comments[0]?.count || 0,
-            profiles: authorProfile ? { profile_image_url: authorProfile.profile_image_url } : null
+            profiles: authorProfile ? { profile_image_url: authorProfile.profile_image_url, generation: authorProfile.generation } : null
           };
         });
         setPosts(mappedPosts);
@@ -132,12 +136,12 @@ export default function CommunityPage() {
         
       if (commentsError) throw commentsError;
 
-      const { data: profilesData } = await supabase.from('profiles').select('name, profile_image_url');
+      const { data: profilesData } = await supabase.from('profiles').select('name, profile_image_url, generation');
       
       if (commentsData) {
         const mappedComments = commentsData.map((c: any) => {
           const authorProfile = profilesData?.find(p => p.name === c.author_name);
-          return { ...c, profiles: authorProfile ? { profile_image_url: authorProfile.profile_image_url } : null };
+          return { ...c, profiles: authorProfile ? { profile_image_url: authorProfile.profile_image_url, generation: authorProfile.generation } : null };
         });
         setComments(mappedComments);
       }
@@ -428,7 +432,7 @@ export default function CommunityPage() {
                         <div className="w-5 h-5 lg:w-6 lg:h-6 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden font-bold text-text-muted text-[10px] transition-colors">
                           {post.profiles?.profile_image_url ? <img src={post.profiles.profile_image_url} className="w-full h-full object-cover" alt="author" /> : post.author_name[0]}
                         </div>
-                        <span className="truncate max-w-24">{post.author_name}</span>
+                        <span className="truncate max-w-24">{formatNameWithGen(post.author_name, post.profiles?.generation)}</span>
                       </div>
                       <div className="flex items-center gap-2 lg:gap-3 shrink-0"><span>{new Date(post.created_at).toLocaleDateString()}</span><span className="flex items-center gap-1 text-primary"><MessageCircle className="w-3 h-3 lg:w-3.5 lg:h-3.5" /> {post.comment_count}</span></div>
                     </div>
@@ -553,11 +557,11 @@ export default function CommunityPage() {
         <Dialog as="div" className="relative z-50" onClose={() => setIsDetailModalOpen(false)}>
           <div className="fixed inset-0 bg-black/60 dark:bg-black/80 backdrop-blur-sm transition-opacity" />
           <div className="fixed inset-0 flex items-center justify-center sm:p-4">
-            {/* 🌟 수정 포인트 1: 모달창 자체를 flex-col로 만들고 고정 높이와 둥근 모서리 설정 */}
+            {/* 🌟 수정 포인트: Flexbox 구조로 완벽히 분리하여 입력창이 댓글을 가리지 않게 함 */}
             <Dialog.Panel className="w-full sm:max-w-2xl bg-bg-surface sm:rounded-3xl border border-border-base h-dvh sm:h-[85vh] flex flex-col shadow-2xl relative transition-colors overflow-hidden">
               
               {selectedPost && (<>
-                {/* 상단 헤더 영역 (고정) */}
+                {/* 1. 고정 헤더 */}
                 <div className="p-5 lg:p-6 border-b border-border-base shrink-0 relative transition-colors bg-bg-surface z-10 shadow-sm">
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex-1 pr-4">
@@ -571,7 +575,10 @@ export default function CommunityPage() {
                       <div className="w-7 h-7 lg:w-8 lg:h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden font-bold text-text-muted text-[10px] transition-colors">
                         {selectedPost.profiles?.profile_image_url ? <img src={selectedPost.profiles.profile_image_url} className="w-full h-full object-cover" alt="author" /> : selectedPost.author_name[0]}
                       </div>
-                      <div><p className="font-bold text-text-base text-sm">{selectedPost.author_name}</p><p className="text-[10px] lg:text-xs">{selectedPost.author_session}</p></div>
+                      <div>
+                        <p className="font-bold text-text-base text-sm">{formatNameWithGen(selectedPost.author_name, selectedPost.profiles?.generation)}</p>
+                        <p className="text-[10px] lg:text-xs">{selectedPost.author_session}</p>
+                      </div>
                     </div>
                     <div className="text-right flex items-center gap-2 lg:gap-3">
                       <span className="text-[10px] lg:text-xs">{new Date(selectedPost.created_at).toLocaleString('ko-KR')}</span>
@@ -590,8 +597,8 @@ export default function CommunityPage() {
                   </div>
                 </div>
 
-                {/* 🌟 수정 포인트 2: 스크롤이 되는 글/댓글 영역 (하단 여백 대폭 추가) */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-5 lg:p-6 pb-32 md:pb-40 relative">
+                {/* 2. 스크롤 가능한 본문 및 댓글 영역 */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-5 lg:p-6 pb-6 relative">
                   <div className="prose dark:prose-invert max-w-none text-slate-700 dark:text-slate-300 leading-relaxed mb-8 blog-content wrap-break-word overflow-x-hidden" dangerouslySetInnerHTML={{ __html: selectedPost.content }} />
                   <style jsx global>{`.blog-content img { max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--border-color); margin: 16px auto; display: block; object-fit: contain; }`}</style>
                   
@@ -672,7 +679,7 @@ export default function CommunityPage() {
                           <div className="flex-1 bg-bg-base border border-border-base p-3.5 lg:p-4 rounded-2xl rounded-tl-sm transition-colors">
                             <div className="flex justify-between items-start mb-2">
                               <div className="flex items-center gap-2">
-                                <p className="font-bold text-text-base text-sm">{comment.author_name}</p>
+                                <p className="font-bold text-text-base text-sm">{formatNameWithGen(comment.author_name, comment.profiles?.generation)}</p>
                                 <p className="text-[10px] text-text-muted font-medium bg-bg-surface px-1.5 py-0.5 rounded border border-border-base">{comment.author_session}</p>
                               </div>
                               <div className="flex items-center gap-2">
@@ -701,8 +708,8 @@ export default function CommunityPage() {
                   </div>
                 </div>
 
-                {/* 🌟 수정 포인트 3: 댓글 입력창 영역 (고정) */}
-                <div className="absolute bottom-0 left-0 right-0 bg-bg-surface border-t border-border-base p-3 lg:p-4 z-20 transition-colors shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+                {/* 3. 고정 하단 (댓글 입력창) */}
+                <div className="shrink-0 bg-bg-surface border-t border-border-base p-3 lg:p-4 z-20 transition-colors shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] relative">
                   <div className="max-w-2xl mx-auto flex items-end gap-2 bg-bg-base border border-border-base rounded-2xl p-1.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary shadow-inner transition-all">
                     <input 
                       ref={commentInputRef}
