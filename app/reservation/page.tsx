@@ -189,7 +189,6 @@ export default function TimetablePage() {
           </button>
         </header>
 
-        {/* 🌟 pb-24를 추가하여 모바일 하단 플로팅 버튼/네비바와 표가 겹치지 않게 공간 확보 */}
         <div className="flex-1 overflow-auto p-4 lg:p-8 pb-24 lg:pb-8 custom-scrollbar">
           <div className="w-full min-w-max bg-bg-surface rounded-xl border border-border-base overflow-hidden shadow-sm dark:shadow-2xl transition-colors">
             
@@ -215,9 +214,10 @@ export default function TimetablePage() {
                   </div>
                 ))}
                 
+                {/* 🌟 폰트 크기 및 여백 대폭 상향 수정 */}
                 {bookings.filter(b => weekDays.some(wd => wd.fullDate === b.fullDate)).map(b => (
                   <div key={b.id} onClick={(e) => { e.stopPropagation(); setSelectedBooking(b); setIsDetailOpen(true); }} 
-                       className="absolute inset-x-1 border-l-4 rounded p-2 z-10 shadow-sm hover:brightness-105 dark:hover:brightness-125 transition cursor-pointer"
+                       className="absolute inset-x-1 border-l-4 rounded p-2 md:p-2.5 z-10 shadow-sm hover:brightness-105 dark:hover:brightness-125 transition cursor-pointer flex flex-col"
                        style={{ 
                          top: `${(b.start - 8) * 5}rem`, 
                          left: `calc((100% / 7) * ${b.dayIndex})`, 
@@ -229,8 +229,8 @@ export default function TimetablePage() {
                          borderColor: b.teamColor,
                          color: b.teamColor
                        }}>
-                    <p className="text-[10px] font-bold uppercase truncate">{b.team}</p>
-                    <p className="text-[9px] opacity-80">{formatTimeToString(b.start)} - {formatTimeToString(b.start+b.duration)}</p>
+                    <p className="text-xs sm:text-sm md:text-base font-black uppercase truncate leading-tight mb-0.5">{b.team}</p>
+                    <p className="text-[10px] sm:text-xs font-semibold opacity-90 tracking-tight">{formatTimeToString(b.start)} - {formatTimeToString(b.start+b.duration)}</p>
                   </div>
                 ))}
               </div>
@@ -249,7 +249,6 @@ export default function TimetablePage() {
         </aside>
       )}
 
-      {/* 🌟 bottom-24 에서 bottom-28 로 수정하여 모바일 하단 네비게이션과 겹치지 않게 더 위로 올림 */}
       <button onClick={() => { setDate(formatDateString(new Date())); setIsOpen(true); }} className="lg:hidden fixed bottom-28 right-6 w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-lg z-40 hover:scale-105 transition-transform">
         <Plus className="w-8 h-8 text-white" />
       </button>
