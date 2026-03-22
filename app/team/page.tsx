@@ -181,25 +181,48 @@ export default function TeamManagementPage() {
     }
   };
 
+  // 🌟 새 팀 생성 (생성 시 자동으로 팀장 권한 부여 및 전체 프로필 승급)
   const handleCreateTeam = async () => {
     if (!newTeamName.trim()) return;
-    const { data: newTeam, error } = await supabase.from('teams').insert([{ 
-      name: newTeamName, 
-      bio: newTeamBio,
-      team_color: newTeamColor 
-    }]).select().single();
+    if (!currentUser) return alert('로그인 정보가 없습니다. 다시 로그인해 주세요.');
 
-    if (error) return alert('팀 생성 실패: ' + error.message);
+    try {
+      // 1. 팀 먼저 생성
+      const { data: newTeam, error: teamError } = await supabase.from('teams').insert([{ 
+        name: newTeamName, 
+        bio: newTeamBio,
+        team_color: newTeamColor 
+      }]).select().single();
 
-    if (newTeam && currentUser) {
-      await supabase.from('team_members').insert([{ team_id: newTeam.id, user_id: currentUser.id, role: 'Leader' }]);
+      if (teamError) throw teamError;
+
+      // 2. 방금 만든 팀에 로그인한 본인을 'Leader' 권한으로 즉시 등록
+      if (newTeam && currentUser) {
+        const { error: memberError } = await supabase.from('team_members').insert([{ 
+          team_id: newTeam.id, 
+          user_id: currentUser.id, 
+          role: 'Leader' 
+        }]);
+        
+        if (memberError) throw memberError;
+
+        // 3. 🌟 유저의 전체 권한(role)이 'member'라면 'leader'(팀장)로 승급시킴
+        if (globalRole === 'member') {
+          await supabase.from('profiles').update({ role: 'leader' }).eq('id', currentUser.id);
+          setGlobalRole('leader'); 
+        }
+      }
+      
+      setIsCreateModalOpen(false); 
+      setNewTeamName(''); 
+      setNewTeamBio(''); 
+      setNewTeamColor(TEAM_COLORS[10]); 
+      alert('새로운 팀이 생성되었으며, 전체 권한이 [팀장]으로 승급되었습니다! 🎉');
+      fetchTeams();
+
+    } catch (error: any) {
+      alert('팀 생성 중 오류가 발생했습니다: ' + error.message);
     }
-    
-    setIsCreateModalOpen(false); 
-    setNewTeamName(''); 
-    setNewTeamBio(''); 
-    setNewTeamColor(TEAM_COLORS[10]); 
-    fetchTeams();
   };
 
   const handleOpenInviteModal = async () => {
@@ -221,12 +244,13 @@ export default function TeamManagementPage() {
     setIsActionSheetOpen(false); fetchMembers(selectedTeam.id); fetchTeams();
   };
 
+  // 🌟 팀원에게 팀장(Leader) 역할을 위임할 때도 글로벌 권한 승급 적용
   const handleChangeRole = async () => {
     if (!selectedMember || !selectedTeam) return;
     
     const newRole = selectedMember.role === 'Leader' ? 'Member' : 'Leader';
     const confirmMsg = newRole === 'Leader' 
-      ? `[${selectedMember.profiles?.name}]님을 이 팀의 팀장(Leader)으로 임명하시겠습니까?` 
+      ? `[${selectedMember.profiles?.name}]님을 이 팀의 팀장(Leader)으로 임명하시겠습니까?\n(해당 부원의 전체 등급도 '팀장'으로 승급됩니다.)` 
       : `[${selectedMember.profiles?.name}]님을 일반 팀원으로 강등하시겠습니까?`;
     
     if (!confirm(confirmMsg)) return;
@@ -234,6 +258,14 @@ export default function TeamManagementPage() {
     const { error } = await supabase.from('team_members').update({ role: newRole }).eq('id', selectedMember.id);
     if (error) alert('역할 변경 실패: ' + error.message);
     else {
+      // 🌟 새로운 팀장으로 승급시켰다면, 그 사람의 글로벌(profiles) 권한도 leader로 올려줌
+      if (newRole === 'Leader') {
+         const { data: pData } = await supabase.from('profiles').select('role').eq('id', selectedMember.user_id).single();
+         if (pData && pData.role === 'member') {
+            await supabase.from('profiles').update({ role: 'leader' }).eq('id', selectedMember.user_id);
+         }
+      }
+      
       alert('역할이 성공적으로 변경되었습니다.');
       setIsActionSheetOpen(false);
       fetchMembers(selectedTeam.id);
@@ -532,10 +564,8 @@ export default function TeamManagementPage() {
       {/* 모달들... */}
       <Transition appear show={isCreateFolderModalOpen} as={Fragment}><Dialog as="div" className="relative z-50" onClose={() => setIsCreateFolderModalOpen(false)}><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0"><div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm" /></Transition.Child><div className="fixed inset-0 flex items-center justify-center p-4"><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"><Dialog.Panel className="w-full max-w-sm rounded-3xl bg-bg-surface border border-border-base p-6 shadow-2xl transition-colors"><Dialog.Title className="text-xl font-bold text-text-base mb-6">새 폴더 생성</Dialog.Title><div className="space-y-5"><div><label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">폴더 이름</label><input type="text" placeholder="예: 1학기 공연조" value={newFolderName} onChange={e => setNewFolderName(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors" /></div></div><div className="flex gap-3 mt-8"><button onClick={() => setIsCreateFolderModalOpen(false)} className="flex-1 py-3.5 bg-bg-base hover:brightness-95 dark:hover:brightness-110 border border-border-base text-text-base font-bold rounded-xl transition-colors">취소</button><button onClick={handleCreateFolder} className="flex-1 py-3.5 bg-primary hover:brightness-110 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition">만들기</button></div></Dialog.Panel></Transition.Child></div></Dialog></Transition>
 
-      {/* 🌟 팀 정보 수정 모달 (컬러 팔레트 포함) */}
       <Transition appear show={isEditTeamModalOpen} as={Fragment}><Dialog as="div" className="relative z-50" onClose={() => setIsEditTeamModalOpen(false)}><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0"><div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm" /></Transition.Child><div className="fixed inset-0 flex items-center justify-center p-4"><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"><Dialog.Panel className="w-full max-w-md rounded-3xl bg-bg-surface border border-border-base p-6 shadow-2xl transition-colors"><div className="flex justify-between items-center mb-6"><Dialog.Title className="text-xl font-bold text-text-base">팀 정보 수정</Dialog.Title><button onClick={() => setIsEditTeamModalOpen(false)} className="text-text-muted hover:text-text-base transition-colors"><X className="w-5 h-5"/></button></div><div className="space-y-5"><div><label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">팀 이름</label><input type="text" value={editTeamName} onChange={e => setEditTeamName(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors" /></div><div><label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">팀 소개</label><textarea rows={3} value={editTeamBio} onChange={e => setEditTeamBio(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors resize-none custom-scrollbar" /></div>
         
-        {/* 컬러 선택 영역 */}
         <div>
           <label className="text-xs font-bold text-text-muted uppercase mb-2 block">팀 고유 색상</label>
           <div className="flex flex-wrap gap-2">
@@ -561,7 +591,6 @@ export default function TeamManagementPage() {
         )}
         </div><button onClick={handleUpdateTeam} className="w-full mt-8 py-3.5 bg-primary hover:brightness-110 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition">수정 완료</button></Dialog.Panel></Transition.Child></div></Dialog></Transition>
 
-      {/* 🌟 새 팀 생성 모달 (기존과 동일하지만, 색상 관련 상태가 추가되어 있음) */}
       <Transition appear show={isCreateModalOpen} as={Fragment}><Dialog as="div" className="relative z-50" onClose={() => setIsCreateModalOpen(false)}><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0"><div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm" /></Transition.Child><div className="fixed inset-0 flex items-center justify-center p-4"><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"><Dialog.Panel className="w-full max-w-md rounded-3xl bg-bg-surface border border-border-base p-6 shadow-2xl transition-colors"><Dialog.Title className="text-xl font-bold text-text-base mb-6">새 팀 생성</Dialog.Title><div className="space-y-5"><div><label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">팀 이름</label><input type="text" value={newTeamName} onChange={e => setNewTeamName(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors" /></div><div><label className="text-xs font-bold text-text-muted uppercase mb-1.5 block">팀 소개</label><textarea rows={3} value={newTeamBio} onChange={e => setNewTeamBio(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-xl p-4 text-text-base focus:border-primary outline-none transition-colors resize-none custom-scrollbar" /></div>
         
         <div>
