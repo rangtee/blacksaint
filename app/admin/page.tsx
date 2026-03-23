@@ -217,32 +217,59 @@ export default function AdminPage() {
     fetchAccounting();
   };
 
+  // 🌟 [오류 수정됨] team_songs 테이블에서 곡 정보를 조인해서 가져오도록 쿼리 수정
   const exportFolderDataToExcel = async (folderId: number, folderName: string) => {
     try {
       setIsLoading(true);
-      const { data: teamsData, error: teamsError } = await supabase.from('teams').select(`id, name, setlist, team_members ( profiles ( name, session ) )`).eq('folder_id', folderId);
+      // setlist 컬럼 대신, team_songs 테이블을 조인해서 가져옵니다.
+      const { data: teamsData, error: teamsError } = await supabase
+        .from('teams')
+        .select(`
+          id, 
+          name, 
+          team_members ( profiles ( name, session ) ),
+          team_songs ( title, artist, duration_seconds, sort_order )
+        `)
+        .eq('folder_id', folderId);
+
       if (teamsError) throw teamsError;
       if (!teamsData || teamsData.length === 0) { alert('이 폴더에는 등록된 팀이 없습니다.'); setIsLoading(false); return; }
 
       const rows: any[] = [];
-      const headers = ['팀 이름', '팀 구성원', '곡 제목', '아티스트', '곡 시간(분)', '팀 총 공연 시간(분)'];
+      const headers = ['팀 이름', '팀 구성원', '곡 제목', '아티스트', '곡 시간', '팀 총 공연 시간(분)'];
 
       teamsData.forEach((team: any) => {
         const membersString = team.team_members.map((tm: any) => `${tm.profiles?.name}(${tm.profiles?.session || '미정'})`).join(', ');
-        let setlists = []; let totalTeamTime = 0;
-        try {
-          if (team.setlist) {
-            setlists = JSON.parse(team.setlist);
-            totalTeamTime = setlists.reduce((acc: number, cur: any) => acc + (Number(cur.duration) || 0), 0);
-          }
-        } catch (e) { console.error(e); }
+        
+        const songs = (team.team_songs || []).sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0));
+        const totalTeamTimeSeconds = songs.reduce((acc: number, cur: any) => acc + (Number(cur.duration_seconds) || 0), 0);
+        const totalTeamTimeMinutes = Math.floor(totalTeamTimeSeconds / 60);
 
-        if (setlists.length === 0) {
+        if (songs.length === 0) {
           rows.push([team.name, membersString, '등록된 곡 없음', '-', '-', 0]);
         } else {
-          rows.push([team.name, membersString, setlists[0].title || '-', setlists[0].artist || '-', setlists[0].duration || 0, totalTeamTime]);
-          for (let i = 1; i < setlists.length; i++) {
-            rows.push(['', '', setlists[i].title || '-', setlists[i].artist || '-', setlists[i].duration || 0, '']);
+          const formatDuration = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+          
+          // 첫 번째 곡 데이터 (팀 이름, 구성원, 총 시간 포함)
+          rows.push([
+            team.name, 
+            membersString, 
+            songs[0].title || '-', 
+            songs[0].artist || '-', 
+            formatDuration(songs[0].duration_seconds || 0), 
+            totalTeamTimeMinutes
+          ]);
+          
+          // 두 번째 곡부터는 빈칸으로 처리하여 깔끔하게 정리
+          for (let i = 1; i < songs.length; i++) {
+            rows.push([
+              '', 
+              '', 
+              songs[i].title || '-', 
+              songs[i].artist || '-', 
+              formatDuration(songs[i].duration_seconds || 0), 
+              ''
+            ]);
           }
         }
       });
@@ -250,9 +277,16 @@ export default function AdminPage() {
       const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, folderName.substring(0, 31));
-      ws['!cols'] = [{ wch: 20 }, { wch: 40 }, { wch: 25 }, { wch: 20 }, { wch: 12 }, { wch: 20 }];
+      
+      // 열 너비 조절
+      ws['!cols'] = [{ wch: 20 }, { wch: 40 }, { wch: 30 }, { wch: 20 }, { wch: 10 }, { wch: 20 }];
+      
       XLSX.writeFile(wb, `동아리_공연팀목록_${folderName}.xlsx`);
-    } catch (error: any) { alert('엑셀 파일 생성 중 오류가 발생했습니다: ' + error.message); } finally { setIsLoading(false); }
+    } catch (error: any) { 
+      alert('엑셀 파일 생성 중 오류가 발생했습니다: ' + error.message); 
+    } finally { 
+      setIsLoading(false); 
+    }
   };
 
   const handleDeleteCustomRoom = async (roomId: string, roomName: string) => { 
@@ -264,7 +298,6 @@ export default function AdminPage() {
     } catch (err: any) { alert('방 삭제 중 오류가 발생했습니다: ' + err.message); }
   };
 
-  // 🌟 (수정) API를 통해 계정을 생성하여 자동 로그인 방지
   const handleManualRegister = async () => {
     if (!newName || !newStudentId || !newPhone) return alert('이름, 학번, 전화번호를 모두 입력해주세요.');
     if (newPhone.length < 6) return alert('비밀번호로 사용될 전화번호는 6자리 이상이어야 합니다.');
@@ -273,7 +306,6 @@ export default function AdminPage() {
     const pseudoEmail = `${newStudentId}@bandon.com`;
 
     try {
-      // API 라우트를 호출하여 서비스 롤로 계정 생성
       const res = await fetch('/api/create-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -300,7 +332,6 @@ export default function AdminPage() {
     } finally { setIsSubmitting(false); }
   };
 
-  // 🌟 (수정) 일괄 등록 시에도 API를 호출하도록 변경
   const handleBatchUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
@@ -346,7 +377,6 @@ export default function AdminPage() {
           const pseudoEmail = `${studentId}@bandon.com`;
           
           try {
-            // API 호출
             const res = await fetch('/api/create-user', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -421,13 +451,11 @@ export default function AdminPage() {
     else { alert('파일이 서버에서 완전히 삭제되었습니다.'); fetchData(); }
   };
 
-  // 🌟 (신규) 회원 정보 수정 모달 열기
   const handleOpenEditMember = (profile: Profile) => {
     setEditProfile(profile);
     setIsEditMemberModalOpen(true);
   };
 
-  // 🌟 (신규) 회원 정보 수정 저장하기
   const handleSaveEditMember = async () => {
     if (!editProfile?.id || !editProfile.name || !editProfile.student_id) return alert('이름과 학번은 필수입니다.');
     setIsSubmitting(true);
@@ -455,7 +483,6 @@ export default function AdminPage() {
   const filteredProfiles = profiles.filter(p => p.name?.includes(searchTerm) || p.student_id?.includes(searchTerm) || p.major?.includes(searchTerm));
   const mainCategories = categories.filter(c => c.parent_id === null);
 
-  // 🌟 (수정) 관리자 뱃지 분리
   const getRoleBadge = (role: string) => {
     if (role === 'president') return <span className="bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">회장</span>;
     if (role === 'admin') return <span className="bg-primary/10 dark:bg-primary/20 text-primary border border-primary/20 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">관리자</span>;
