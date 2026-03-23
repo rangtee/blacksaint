@@ -4,7 +4,7 @@ import { Inter } from 'next/font/google';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ThemeProvider } from 'next-themes';
-import { LayoutDashboard, Users, CalendarDays, MessageSquare, MessageCircle, Shield, LogOut, User, Music, ChevronLeft, Hash, Home, Calendar } from 'lucide-react';
+import { LayoutDashboard, Users, CalendarDays, MessageSquare, MessageCircle, Shield, LogOut, User, Music, ChevronLeft, Hash, Home, Calendar, Menu, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import NotificationBell from '@/components/NotificationBell';
 import './globals.css';
@@ -29,6 +29,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const router = useRouter();
   const [userProfile, setUserProfile] = useState<any>(null);
   const [userTeams, setUserTeams] = useState<any[]>([]);
+  
+  // 🌟 모바일 사이드바 메뉴 열림/닫힘 상태
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const savedColor = localStorage.getItem('theme-primary');
@@ -64,6 +67,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       supabase.removeChannel(profileSubscription);
     };
   }, [pathname, userProfile?.id]);
+
+  // 🌟 페이지 이동 시 모바일 메뉴 자동 닫기
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [pathname]);
 
   const handleSignOut = async () => {
     if (!confirm('로그아웃 하시겠습니까?')) return;
@@ -122,6 +130,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${inter.className} flex h-full overflow-hidden transition-colors duration-300`}>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
           
+          {/* PC 사이드바 */}
           <aside className="hidden md:flex w-64 shrink-0 bg-bg-surface border-r border-border-base p-6 flex-col h-full z-20 transition-colors duration-300">
             <div onClick={() => router.push('/')} className="cursor-pointer mb-8 group">
               <h1 className="text-3xl font-black text-primary mb-1 group-hover:brightness-110 transition flex items-center gap-2">
@@ -154,9 +163,46 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </nav>
           </aside>
 
+          {/* 🌟 모바일 사이드바 (햄버거 메뉴 오버레이) */}
+          {isMobileMenuOpen && (
+            <div className="md:hidden fixed inset-0 z-60 flex">
+              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setIsMobileMenuOpen(false)} />
+              <aside className="relative w-64 max-w-[80%] bg-bg-surface border-r border-border-base p-6 flex flex-col h-full shadow-2xl animate-in slide-in-from-left duration-300 transition-colors">
+                <div className="flex items-center justify-between mb-8">
+                  <h1 className="text-2xl font-black text-primary flex items-center gap-2">
+                    <Music className="w-6 h-6" /> Blacksaint
+                  </h1>
+                  <button onClick={() => setIsMobileMenuOpen(false)} className="p-1 text-text-muted hover:text-text-base bg-slate-100 dark:bg-slate-800 rounded-lg"><X className="w-5 h-5"/></button>
+                </div>
+                
+                <div className="flex items-center gap-3 mb-6 p-3 bg-bg-base rounded-xl border border-border-base">
+                  <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white font-bold shrink-0">
+                    {userProfile?.profile_image_url ? <img src={userProfile.profile_image_url} className="w-full h-full rounded-full object-cover" /> : userProfile?.name[0]}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-text-base truncate">{userProfile?.name}</p>
+                    <p className="text-[10px] text-text-muted truncate">{userProfile?.session || '세션 미정'}</p>
+                  </div>
+                </div>
+
+                <nav className="flex-1 space-y-2 overflow-y-auto custom-scrollbar pr-1">
+                  {navItems.map(item => (
+                    <button key={item.path} onClick={() => router.push(item.path)} className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold transition group ${pathname === item.path ? 'bg-primary/10 dark:bg-primary/20 text-primary border border-primary/20 shadow-sm' : 'text-text-muted hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:text-text-base'}`}>
+                      <MenuIcon name={item.icon} />
+                      {item.name}
+                    </button>
+                  ))}
+                </nav>
+                
+                <button onClick={handleSignOut} className="mt-6 flex items-center justify-center gap-2 w-full py-3 bg-rose-50 dark:bg-rose-500/10 text-rose-500 font-bold rounded-xl border border-rose-100 dark:border-rose-500/20 hover:bg-rose-500 hover:text-white transition">
+                  <LogOut className="w-4 h-4" /> 로그아웃
+                </button>
+              </aside>
+            </div>
+          )}
+
           <div className="flex-1 flex flex-col h-full overflow-hidden relative bg-bg-base transition-colors duration-300">
             
-            {/* 🌟 알림창이 다른 요소들 위로 완벽하게 올라오도록 z-index를 40으로 상향 조정했습니다! */}
             <header className="hidden md:flex h-16 shrink-0 border-b border-border-base items-center justify-between px-6 lg:px-8 bg-bg-surface/80 backdrop-blur-md z-40 relative transition-colors duration-300">
               <div className="flex items-center gap-2">
                 {pathname.startsWith('/team/') && pathname.length > 6 && (
@@ -194,11 +240,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               )}
             </header>
 
-            {/* 🌟 모바일 헤더도 동일하게 z-index 40으로 끌어올렸습니다. */}
+            {/* 🌟 모바일 헤더: 햄버거 메뉴 아이콘 추가됨 */}
             <header className="md:hidden h-14 shrink-0 border-b border-border-base flex items-center justify-between px-4 bg-bg-surface/80 backdrop-blur-md z-40 sticky top-0 transition-colors duration-300">
-                <h2 className="text-lg font-bold flex items-center gap-2 text-text-base">
-                  {getPageTitle()}
-                </h2>
+                <div className="flex items-center gap-3">
+                  <button onClick={() => setIsMobileMenuOpen(true)} className="p-1.5 -ml-1 text-text-base hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition">
+                    <Menu className="w-6 h-6" />
+                  </button>
+                  <h2 className="text-lg font-bold flex items-center gap-2 text-text-base">
+                    {getPageTitle()}
+                  </h2>
+                </div>
                 
                 {userProfile && (
                   <div className="flex items-center gap-2">
@@ -211,35 +262,27 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               {children}
             </main>
 
-            {/* 🌟 모바일 하단 메뉴에 동아리 캘린더를 추가하고 7개의 아이콘이 잘 들어가도록 사이즈를 조절했습니다. */}
+            {/* 🌟 모바일 하단 메뉴: 가장 중요한 5개 메뉴만 남겨서 넓고 쾌적하게! */}
             <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-bg-surface/95 backdrop-blur-md border-t border-border-base z-50 flex items-center justify-between px-2 pb-safe transition-colors duration-300">
               <Link href="/" className={`flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors ${pathname === '/' ? 'text-primary' : 'text-text-muted hover:text-text-base'}`}>
                 <Home className={`w-5 h-5 ${pathname === '/' ? 'fill-current' : ''}`} />
-                <span className="text-[9px] font-bold mt-0.5">홈</span>
-              </Link>
-              <Link href="/calendar" className={`flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors ${pathname.startsWith('/calendar') ? 'text-primary' : 'text-text-muted hover:text-text-base'}`}>
-                <Calendar className={`w-5 h-5 ${pathname.startsWith('/calendar') ? 'fill-current' : ''}`} />
-                <span className="text-[9px] font-bold mt-0.5">일정</span>
+                <span className="text-[10px] font-bold mt-0.5">홈</span>
               </Link>
               <Link href="/reservation" className={`flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors ${pathname.startsWith('/reservation') ? 'text-primary' : 'text-text-muted hover:text-text-base'}`}>
                 <CalendarDays className={`w-5 h-5 ${pathname.startsWith('/reservation') ? 'fill-current' : ''}`} />
-                <span className="text-[9px] font-bold mt-0.5">예약</span>
-              </Link>
-              <Link href="/team" className={`flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors ${pathname.startsWith('/team') ? 'text-primary' : 'text-text-muted hover:text-text-base'}`}>
-                <Users className={`w-5 h-5 ${pathname.startsWith('/team') ? 'fill-current' : ''}`} />
-                <span className="text-[9px] font-bold mt-0.5">팀</span>
+                <span className="text-[10px] font-bold mt-0.5">예약</span>
               </Link>
               <Link href="/community" className={`flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors ${pathname.startsWith('/community') ? 'text-primary' : 'text-text-muted hover:text-text-base'}`}>
                 <MessageSquare className={`w-5 h-5 ${pathname.startsWith('/community') ? 'fill-current' : ''}`} />
-                <span className="text-[9px] font-bold mt-0.5">게시판</span>
+                <span className="text-[10px] font-bold mt-0.5">게시판</span>
               </Link>
               <Link href="/chat" className={`flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors ${pathname.startsWith('/chat') ? 'text-primary' : 'text-text-muted hover:text-text-base'}`}>
                 <MessageCircle className={`w-5 h-5 ${pathname.startsWith('/chat') ? 'fill-current' : ''}`} />
-                <span className="text-[9px] font-bold mt-0.5">채팅</span>
+                <span className="text-[10px] font-bold mt-0.5">채팅</span>
               </Link>
               <Link href="/mypage" className={`flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors ${pathname.startsWith('/mypage') ? 'text-primary' : 'text-text-muted hover:text-text-base'}`}>
                 <User className={`w-5 h-5 ${pathname.startsWith('/mypage') ? 'fill-current' : ''}`} />
-                <span className="text-[9px] font-bold mt-0.5">프로필</span>
+                <span className="text-[10px] font-bold mt-0.5">프로필</span>
               </Link>
             </nav>
 
