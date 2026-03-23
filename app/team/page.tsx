@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef, Fragment } from 'react';
-import { Plus, Users, ChevronLeft, MoreVertical, Edit2, Shield, UserMinus, UserPlus, Info, Camera, Music, Trash2, X, Clock, Search, FolderPlus, Folder, ChevronUp, ChevronDown, Loader2, Play, Pause } from 'lucide-react';
+import { Plus, Users, ChevronLeft, MoreVertical, Edit2, Shield, UserMinus, UserPlus, Info, Camera, Music, Trash2, X, Clock, Search, FolderPlus, Folder, ChevronUp, ChevronDown, Loader2, Play, Pause, LogOut } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 import { supabase } from '../../lib/supabase';
 
@@ -64,11 +64,9 @@ export default function TeamManagementPage() {
   const [newSongMinutes, setNewSongMinutes] = useState('');
   const [newSongSeconds, setNewSongSeconds] = useState('');
 
-  // 🌟 미리듣기 기능 상태
   const [playingTrackId, setPlayingTrackId] = useState<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // 🌟 오디오 객체 초기화 및 정리
   useEffect(() => {
     audioRef.current = new Audio();
     audioRef.current.onended = () => setPlayingTrackId(null);
@@ -80,7 +78,6 @@ export default function TeamManagementPage() {
     };
   }, []);
 
-  // 🌟 모달이 닫히면 재생 중이던 음악 정지
   useEffect(() => {
     if (!isAddSongModalOpen && audioRef.current) {
       audioRef.current.pause();
@@ -262,10 +259,28 @@ export default function TeamManagementPage() {
     else { fetchMembers(selectedTeam.id); fetchTeams(); }
   };
 
-  const handleKickMember = async () => {
-    if (!selectedMember || !selectedTeam || !confirm('팀에서 내보내시겠습니까?')) return;
+  // 🌟 (변경) 본인 나가기 & 타인 강퇴를 통합한 함수
+  const handleRemoveMember = async () => {
+    if (!selectedMember || !selectedTeam) return;
+    
+    const isSelf = selectedMember.user_id === currentUser?.id;
+    const confirmMsg = isSelf ? '정말 이 팀에서 나가시겠습니까?' : '팀에서 내보내시겠습니까?';
+    
+    if (!confirm(confirmMsg)) return;
+
     await supabase.from('team_members').delete().eq('id', selectedMember.id);
-    setIsActionSheetOpen(false); fetchMembers(selectedTeam.id); fetchTeams();
+    setIsActionSheetOpen(false); 
+    
+    if (isSelf) {
+      alert('팀에서 나갔습니다.');
+      setCurrentView('list');
+      setSelectedTeam(null);
+      window.history.pushState({}, '', '/team');
+      fetchTeams();
+    } else {
+      fetchMembers(selectedTeam.id); 
+      fetchTeams();
+    }
   };
 
   const handleChangeRole = async () => {
@@ -326,9 +341,8 @@ export default function TeamManagementPage() {
     }
   };
 
-  // 🌟 미리듣기 재생 및 정지 토글 함수
   const togglePlayPreview = (e: React.MouseEvent, track: any) => {
-    e.stopPropagation(); // 부모 요소의 onClick(곡 추가 이벤트) 방지
+    e.stopPropagation(); 
     
     if (!audioRef.current) return;
     if (!track.preview) {
@@ -337,11 +351,9 @@ export default function TeamManagementPage() {
     }
 
     if (playingTrackId === track.id) {
-      // 현재 곡이 재생 중이면 정지
       audioRef.current.pause();
       setPlayingTrackId(null);
     } else {
-      // 다른 곡을 재생
       audioRef.current.pause();
       audioRef.current.src = track.preview;
       audioRef.current.play();
@@ -628,7 +640,9 @@ export default function TeamManagementPage() {
                             <div className="text-[11px] text-text-muted">{member.profiles?.session || '포지션 미정'}</div>
                           </div>
                         </div>
-                        {canManageTeam && member.user_id !== currentUser?.id && (
+                        
+                        {/* 🌟 관리자이거나 자기 자신일 경우 세로 점 3개 표시 */}
+                        {(canManageTeam || member.user_id === currentUser?.id) && (
                           <button onClick={() => { setSelectedMember(member); setIsActionSheetOpen(true); }} className="p-2 text-text-muted hover:text-text-base hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-lg transition">
                             <MoreVertical className="w-4 h-4" />
                           </button>
@@ -691,7 +705,6 @@ export default function TeamManagementPage() {
 
         </div><div className="flex gap-3 mt-8"><button onClick={() => setIsCreateModalOpen(false)} className="flex-1 py-3.5 bg-bg-base hover:brightness-95 dark:hover:brightness-110 border border-border-base text-text-base font-bold rounded-xl transition-colors">취소</button><button onClick={handleCreateTeam} className="flex-1 py-3.5 bg-primary hover:brightness-110 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition">생성하기</button></div></Dialog.Panel></Transition.Child></div></Dialog></Transition>
       
-      {/* 🌟 합주곡 추가 모달 */}
       <Transition appear show={isAddSongModalOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={() => setIsAddSongModalOpen(false)}>
           <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0"><div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm" /></Transition.Child>
@@ -728,7 +741,6 @@ export default function TeamManagementPage() {
                         {searchResults.map((track) => (
                           <div key={track.id} className="flex items-center gap-3 p-3 bg-bg-base border border-border-base rounded-xl hover:border-primary/50 transition group">
                             
-                            {/* 🌟 앨범 커버를 미리듣기 버튼으로 사용 */}
                             <div className="relative w-12 h-12 shrink-0 cursor-pointer shadow-sm" onClick={(e) => togglePlayPreview(e, track)}>
                               <img src={track.album.cover_small} alt="cover" className="w-full h-full rounded-lg object-cover" />
                               <div className={`absolute inset-0 bg-black/40 rounded-lg flex items-center justify-center transition-opacity ${playingTrackId === track.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
@@ -776,16 +788,28 @@ export default function TeamManagementPage() {
       <Transition appear show={isActionSheetOpen} as={Fragment}><Dialog as="div" className="relative z-50" onClose={() => setIsActionSheetOpen(false)}><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0"><div className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm" /></Transition.Child><div className="fixed inset-0 flex items-end sm:items-center justify-center p-0 sm:p-4"><Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 translate-y-full sm:translate-y-0 sm:scale-95" enterTo="opacity-100 translate-y-0 sm:scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 translate-y-0 sm:scale-100" leaveTo="opacity-0 translate-y-full sm:translate-y-0 sm:scale-95"><Dialog.Panel className="w-full sm:max-w-sm bg-bg-surface border-t sm:border border-border-base rounded-t-3xl sm:rounded-3xl p-6 pb-8 sm:pb-6 shadow-2xl transition-colors"><div className="flex flex-col items-center mb-6"><div className="w-12 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full mb-4 sm:hidden" /><h3 className="text-lg font-bold text-text-base">{selectedMember?.profiles?.name}</h3><p className="text-sm text-text-muted">{selectedMember?.profiles?.session}</p></div>
         
         <div className="space-y-2">
-          <button onClick={handleChangeRole} className="w-full flex items-center gap-3 p-4 bg-bg-base hover:brightness-95 dark:hover:brightness-110 rounded-xl text-text-base font-medium transition-colors border border-border-base">
-            <Shield className="w-5 h-5 text-text-muted" /> 
-            {selectedMember?.role === 'Leader' ? '일반 팀원으로 강등' : '팀장(Leader)으로 승급'}
-          </button>
-          
-          <div className="h-px bg-border-base my-2 transition-colors" />
-          
-          <button onClick={handleKickMember} className="w-full flex items-center gap-3 p-4 bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 border border-rose-100 dark:border-rose-500/20 rounded-xl text-rose-500 font-bold transition-colors">
-            <UserMinus className="w-5 h-5" /> 팀에서 내보내기
-          </button>
+          {/* 🌟 관리자일 경우 권한 변경 및 강퇴 버튼 표시 */}
+          {selectedMember?.user_id !== currentUser?.id && canManageTeam && (
+            <>
+              <button onClick={handleChangeRole} className="w-full flex items-center gap-3 p-4 bg-bg-base hover:brightness-95 dark:hover:brightness-110 rounded-xl text-text-base font-medium transition-colors border border-border-base">
+                <Shield className="w-5 h-5 text-text-muted" /> 
+                {selectedMember?.role === 'Leader' ? '일반 팀원으로 강등' : '팀장(Leader)으로 승급'}
+              </button>
+              
+              <div className="h-px bg-border-base my-2 transition-colors" />
+              
+              <button onClick={handleRemoveMember} className="w-full flex items-center gap-3 p-4 bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 border border-rose-100 dark:border-rose-500/20 rounded-xl text-rose-500 font-bold transition-colors">
+                <UserMinus className="w-5 h-5" /> 팀에서 내보내기
+              </button>
+            </>
+          )}
+
+          {/* 🌟 본인일 경우 팀에서 나가기 버튼 표시 */}
+          {selectedMember?.user_id === currentUser?.id && (
+            <button onClick={handleRemoveMember} className="w-full flex items-center gap-3 p-4 bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 border border-rose-100 dark:border-rose-500/20 rounded-xl text-rose-500 font-bold transition-colors">
+              <LogOut className="w-5 h-5" /> 팀에서 나가기
+            </button>
+          )}
         </div>
 
         <button onClick={() => setIsActionSheetOpen(false)} className="w-full mt-4 py-4 text-text-muted font-bold hover:text-text-base transition-colors sm:hidden">닫기</button></Dialog.Panel></Transition.Child></div></Dialog></Transition>
