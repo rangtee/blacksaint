@@ -23,8 +23,8 @@ export default function TimetablePage() {
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   
   const [teams, setTeams] = useState<Team[]>([]);
-  const [myTeamIds, setMyTeamIds] = useState<number[]>([]); // 🌟 내가 속한 팀 ID 저장 (권한 체크용)
-  const [isAdmin, setIsAdmin] = useState(false); // 🌟 관리자/회장 여부 저장
+  const [myTeamIds, setMyTeamIds] = useState<number[]>([]); 
+  const [isAdmin, setIsAdmin] = useState(false); 
   
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [currentViewDate, setCurrentViewDate] = useState(new Date());
@@ -60,30 +60,19 @@ export default function TimetablePage() {
     return `${h}:${m}`;
   };
 
-  const getHexWithOpacity = (hex: string, opacity: number) => {
-    const cleanHex = hex.replace('#', '');
-    const r = parseInt(cleanHex.substring(0, 2), 16);
-    const g = parseInt(cleanHex.substring(2, 4), 16);
-    const b = parseInt(cleanHex.substring(4, 6), 16);
-    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
-  };
-
   const fetchData = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     
     if (session?.user) {
-      // 🌟 유저 정보 (권한 체크)
       const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
       const hasAdminRights = profile?.role === 'admin' || profile?.role === 'president';
       setIsAdmin(hasAdminRights);
 
-      // 🌟 내가 속한 팀 ID 목록 가져오기 (권한 체크용)
       const { data: myTeamsData } = await supabase.from('team_members').select('team_id').eq('user_id', session.user.id);
       if (myTeamsData) {
         setMyTeamIds(myTeamsData.map(t => t.team_id));
       }
 
-      // 🌟 관리자면 '모든 팀'을, 일반 유저면 '내 팀'만 콤보박스에 표시
       if (hasAdminRights) {
         const { data: allTeams } = await supabase.from('teams').select('id, name').order('name');
         if (allTeams) setTeams(allTeams);
@@ -133,12 +122,14 @@ export default function TimetablePage() {
   const handleMouseUp = () => {
     if (dragState.isDragging && dragState.date !== null && dragState.start !== null && dragState.end !== null) {
       const finalStart = Math.min(dragState.start, dragState.end);
-      const finalEnd = Math.max(dragState.start, dragState.end) + 1; 
-
-      setDate(dragState.date);
-      setStartTime(finalStart);
-      setEndTime(finalEnd);
-      setIsOpen(true);
+      const finalEnd = Math.max(dragState.start, dragState.end) + 0.5; 
+      
+      if (finalEnd - finalStart > 0) {
+        setDate(dragState.date);
+        setStartTime(finalStart);
+        setEndTime(finalEnd);
+        setIsOpen(true);
+      }
     }
     setDragState({ isDragging: false, date: null, start: null, end: null });
   };
@@ -165,6 +156,7 @@ export default function TimetablePage() {
   const handleReservation = async () => {
     if (!teamId || !date) return alert('팀과 날짜를 선택해주세요!');
     if (isRecurring && !recurringEndDate) return alert('정기 예약 종료 날짜를 선택해주세요!');
+    if (startTime >= endTime) return alert('예약 종료 시간은 시작 시간보다 늦어야 합니다.');
 
     setIsSubmitting(true);
     try {
@@ -217,16 +209,31 @@ export default function TimetablePage() {
     const day = currentViewDate.getDay() === 0 ? 6 : currentViewDate.getDay() - 1;
     const start = new Date(currentViewDate);
     start.setDate(currentViewDate.getDate() - day);
-    return Array.from({ length: 7 }).map((_, i) => {
-      const d = new Date(start); d.setDate(start.getDate() + i);
+    
+    const days = [];
+    const startMonth = start.getMonth(); // 🌟 이번 주의 시작(월요일) 월을 기준점으로 삼음
+
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
       const fullDate = formatDateString(d);
-      return {
+      
+      let dateDisplay = d.getDate().toString();
+      
+      // 🌟 시작일(월요일)과 월이 다르면 뒤에 달을 붙여서 "월.일" 포맷으로 표시
+      if (d.getMonth() !== startMonth) {
+        dateDisplay = `${d.getMonth() + 1}.${d.getDate()}`;
+      }
+
+      days.push({
         day: ['월','화','수','목','금','토','일'][i],
-        dateNum: d.getDate(),
+        dateNum: dateDisplay,
         fullDate: fullDate,
         isToday: fullDate === formatDateString(new Date())
-      };
-    });
+      });
+    }
+    
+    return days;
   })();
 
   return (
@@ -295,7 +302,7 @@ export default function TimetablePage() {
                 
                 {bookings.filter(b => weekDays.some(wd => wd.fullDate === b.fullDate)).map(b => (
                   <div key={b.id} onClick={(e) => { e.stopPropagation(); setSelectedBooking(b); setIsDetailOpen(true); }} 
-                       className="absolute inset-x-1 border-l-4 rounded p-2 md:p-2.5 z-10 shadow-sm hover:brightness-105 dark:hover:brightness-125 transition cursor-pointer flex flex-col"
+                       className="absolute inset-x-1 rounded p-2 md:p-2.5 z-10 shadow-md hover:brightness-110 transition cursor-pointer flex flex-col"
                        style={{ 
                          top: `${(b.start - 8) * 5}rem`, 
                          left: `calc((100% / 7) * ${b.dayIndex})`, 
@@ -303,12 +310,11 @@ export default function TimetablePage() {
                          height: `calc(${b.duration * 5}rem - 4px)`, 
                          marginLeft: '4px', 
                          marginTop: '2px',
-                         backgroundColor: getHexWithOpacity(b.teamColor, 0.15),
-                         borderColor: b.teamColor,
-                         color: b.teamColor
+                         backgroundColor: b.teamColor, // 🌟 반투명 및 좌측 선 제거, 색상 완전 솔리드 채움
+                         color: '#ffffff', // 🌟 솔리드 컬러 배경 대비 흰색 글씨 고정
                        }}>
-                    <p className="text-xs sm:text-sm md:text-base font-black uppercase truncate leading-tight mb-0.5">{b.team}</p>
-                    <p className="text-[10px] sm:text-xs font-semibold opacity-90 tracking-tight">{formatTimeToString(b.start)} - {formatTimeToString(b.start+b.duration)}</p>
+                    <p className="text-xs sm:text-sm md:text-base font-black uppercase truncate leading-tight mb-0.5 drop-shadow-sm">{b.team}</p>
+                    <p className="text-[10px] sm:text-xs font-semibold opacity-90 tracking-tight drop-shadow-sm">{formatTimeToString(b.start)} - {formatTimeToString(b.start+b.duration)}</p>
                   </div>
                 ))}
               </div>
@@ -332,8 +338,7 @@ export default function TimetablePage() {
       </button>
 
       {isOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden flex items-end justify-center">
-          <div className="absolute inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsOpen(false)} />
+        <div className="fixed inset-x-0 bottom-0 z-50 lg:hidden flex items-end justify-center">
           <div className="relative w-full max-h-[90vh] overflow-y-auto custom-scrollbar bg-bg-surface border-t border-border-base p-6 rounded-t-3xl shadow-2xl animate-in slide-in-from-bottom-full duration-300 ease-out transition-colors">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-lg font-bold text-text-base uppercase tracking-tight">New Booking</h3>
@@ -371,7 +376,6 @@ export default function TimetablePage() {
               </div>
 
               <div className="flex flex-col gap-2">
-                {/* 🌟 관리자이거나 자기 팀인 경우에만 취소 버튼 표시 */}
                 {(isAdmin || (selectedBooking && myTeamIds.includes(selectedBooking.team_id))) ? (
                   <>
                     <button onClick={() => handleDeleteBooking('single')} className="w-full py-3 bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-500 border border-rose-200 dark:border-rose-500/20 rounded-xl font-bold hover:bg-rose-500 hover:text-white dark:hover:bg-rose-500 transition flex items-center justify-center gap-2">
