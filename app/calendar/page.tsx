@@ -56,11 +56,17 @@ export default function CalendarPage() {
   }, []);
 
   const fetchEvents = async () => {
-    const { data } = await supabase
+    // 🌟 에러가 났을 때 원인을 파악하기 쉽도록 에러 핸들링 추가
+    const { data, error } = await supabase
       .from('club_events')
       .select('*, profiles(name, session)')
       .order('start_date', { ascending: true });
-    if (data) setEvents(data as ClubEvent[]);
+      
+    if (error) {
+      console.error('일정 불러오기 실패:', error.message);
+    } else if (data) {
+      setEvents(data as ClubEvent[]);
+    }
   };
 
   // 날짜 계산 헬퍼 함수
@@ -170,6 +176,8 @@ export default function CalendarPage() {
             {days.map((dayObj, idx) => {
               const dateStr = formatDateString(dayObj.date);
               const isToday = dateStr === formatDateString(new Date());
+              
+              // 🌟 현재 칸의 날짜가 일정이 포함되는 기간인지 체크
               const dayEvents = events.filter(e => dateStr >= e.start_date && dateStr <= e.end_date);
 
               return (
