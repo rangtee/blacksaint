@@ -11,6 +11,7 @@ interface Booking {
   start: number;
   duration: number;
   team: string;
+  team_id: number;
   teamColor: string; 
   fullDate: string;
   series_id: string | null;
@@ -22,6 +23,9 @@ export default function TimetablePage() {
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   
   const [teams, setTeams] = useState<Team[]>([]);
+  const [myTeamIds, setMyTeamIds] = useState<number[]>([]); // 🌟 내가 속한 팀 ID 저장 (권한 체크용)
+  const [isAdmin, setIsAdmin] = useState(false); // 🌟 관리자/회장 여부 저장
+  
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [currentViewDate, setCurrentViewDate] = useState(new Date());
   
@@ -65,28 +69,33 @@ export default function TimetablePage() {
   };
 
   const fetchData = async () => {
-    // 🌟 1. 로그인한 유저 정보 가져오기
     const { data: { session } } = await supabase.auth.getSession();
     
     if (session?.user) {
-      // 🌟 2. 해당 유저가 소속된 팀 목록만 가져오기
-      const { data: myTeamsData } = await supabase
-        .from('team_members')
-        .select('teams(id, name)')
-        .eq('user_id', session.user.id);
-        
+      // 🌟 유저 정보 (권한 체크)
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
+      const hasAdminRights = profile?.role === 'admin' || profile?.role === 'president';
+      setIsAdmin(hasAdminRights);
+
+      // 🌟 내가 속한 팀 ID 목록 가져오기 (권한 체크용)
+      const { data: myTeamsData } = await supabase.from('team_members').select('team_id').eq('user_id', session.user.id);
       if (myTeamsData) {
-        const myTeams = myTeamsData
-          .map((item: any) => item.teams)
-          .filter(Boolean); // null 방지
-        
-        // 중복 제거 (안전 장치)
-        const uniqueTeams = Array.from(new Map(myTeams.map(t => [t.id, t])).values());
-        setTeams(uniqueTeams);
+        setMyTeamIds(myTeamsData.map(t => t.team_id));
+      }
+
+      // 🌟 관리자면 '모든 팀'을, 일반 유저면 '내 팀'만 콤보박스에 표시
+      if (hasAdminRights) {
+        const { data: allTeams } = await supabase.from('teams').select('id, name').order('name');
+        if (allTeams) setTeams(allTeams);
+      } else {
+        const { data: myTeamsDetail } = await supabase.from('team_members').select('teams(id, name)').eq('user_id', session.user.id);
+        if (myTeamsDetail) {
+          const uniqueTeams = Array.from(new Map(myTeamsDetail.map((item: any) => item.teams).filter(Boolean).map((t: any) => [t.id, t])).values());
+          setTeams(uniqueTeams as Team[]);
+        }
       }
     }
 
-    // 🌟 3. 전체 예약 현황 가져오기
     const { data: resData } = await supabase.from('reservations').select('*, teams(name, team_color)');
     
     if (resData) {
@@ -99,6 +108,7 @@ export default function TimetablePage() {
           start: start.getHours() + start.getMinutes() / 60,
           duration: (end.getTime() - start.getTime()) / (1000 * 60 * 60),
           team: res.teams?.name || '삭제된 팀',
+          team_id: res.team_id,
           teamColor: res.teams?.team_color || '#3B82F6', 
           fullDate: res.reservation_date,
           series_id: res.series_id
@@ -361,14 +371,24 @@ export default function TimetablePage() {
               </div>
 
               <div className="flex flex-col gap-2">
-                <button onClick={() => handleDeleteBooking('single')} className="w-full py-3 bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-500 border border-rose-200 dark:border-rose-500/20 rounded-xl font-bold hover:bg-rose-500 hover:text-white dark:hover:bg-rose-500 transition flex items-center justify-center gap-2">
-                  <Trash2 className="w-4 h-4" /> 현재 일정만 취소
-                </button>
-                {selectedBooking?.series_id && (
-                  <button onClick={() => handleDeleteBooking('series')} className="w-full py-3 bg-rose-600 text-white rounded-xl font-bold hover:bg-rose-700 transition flex items-center justify-center gap-2 shadow-md">
-                    <AlertCircle className="w-4 h-4" /> 전체 일정 취소 (정기)
-                  </button>
+                {/* 🌟 관리자이거나 자기 팀인 경우에만 취소 버튼 표시 */}
+                {(isAdmin || (selectedBooking && myTeamIds.includes(selectedBooking.team_id))) ? (
+                  <>
+                    <button onClick={() => handleDeleteBooking('single')} className="w-full py-3 bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-500 border border-rose-200 dark:border-rose-500/20 rounded-xl font-bold hover:bg-rose-500 hover:text-white dark:hover:bg-rose-500 transition flex items-center justify-center gap-2">
+                      <Trash2 className="w-4 h-4" /> 현재 일정만 취소
+                    </button>
+                    {selectedBooking?.series_id && (
+                      <button onClick={() => handleDeleteBooking('series')} className="w-full py-3 bg-rose-600 text-white rounded-xl font-bold hover:bg-rose-700 transition flex items-center justify-center gap-2 shadow-md">
+                        <AlertCircle className="w-4 h-4" /> 전체 일정 취소 (정기)
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <div className="w-full py-3 bg-slate-100 dark:bg-slate-800 text-text-muted rounded-xl font-bold text-center text-sm border border-border-base">
+                    본인이 속한 팀의 예약만 취소할 수 있습니다.
+                  </div>
                 )}
+
                 <button onClick={() => setIsDetailOpen(false)} className="w-full py-3 bg-slate-100 dark:bg-slate-800 text-text-muted hover:text-text-base rounded-xl font-bold mt-2 hover:bg-slate-200 dark:hover:bg-slate-700 transition">닫기</button>
               </div>
             </Dialog.Panel>
@@ -382,7 +402,6 @@ export default function TimetablePage() {
 
 function ReservationForm({ teamId, setTeamId, date, setDate, startTime, setStartTime, endTime, setEndTime, isRecurring, setIsRecurring, recurringEndDate, setRecurringEndDate, isSubmitting, handleReservation, teams, formatTimeToString, timeSlots }: any) {
   
-  // 🌟 정기 스케줄 날짜 퀵 세팅 함수
   const handleSetWeeks = (weeks: number) => {
     if (!date) return alert('예약 시작 날짜를 먼저 선택해주세요!');
     const startDate = new Date(date);
@@ -399,8 +418,8 @@ function ReservationForm({ teamId, setTeamId, date, setDate, startTime, setStart
       <div>
         <label className="text-[10px] font-bold text-text-muted uppercase mb-1 block tracking-widest">Team</label>
         <select value={teamId} onChange={e => setTeamId(e.target.value)} className="w-full bg-bg-base border border-border-base rounded-lg p-3 text-text-base focus:border-primary outline-none transition-colors">
-          <option value="">소속 팀을 선택하세요</option>
-          {teams.length === 0 && <option disabled>소속된 팀이 없습니다.</option>}
+          <option value="">예약할 팀을 선택하세요</option>
+          {teams.length === 0 && <option disabled>소속된 팀이 없거나 예약 권한이 없습니다.</option>}
           {teams.map((t:any) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
       </div>
@@ -426,7 +445,6 @@ function ReservationForm({ teamId, setTeamId, date, setDate, startTime, setStart
           <span className="text-sm font-bold text-text-muted group-hover:text-text-base transition-colors">정기 스케줄로 등록</span>
         </label>
 
-        {/* 🌟 정기 예약 및 퀵 버튼 추가 */}
         {isRecurring && (
           <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl space-y-2 animate-in fade-in slide-in-from-top-2">
             <label className="text-[10px] font-bold text-primary uppercase block tracking-widest">Until (End Date)</label>

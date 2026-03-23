@@ -8,30 +8,32 @@ import * as XLSX from 'xlsx';
 interface Profile { id: string; name: string; student_id: string; session: string; role: string; can_reserve: boolean; can_post: boolean; phone?: string; team_names?: string[]; college?: string; major?: string; grade?: string; enrollment_status?: string; }
 interface BoardCategory { id: number; name: string; parent_id: number | null; is_admin_only: boolean; }
 interface CustomRoom { id: string; name: string; created_at: string; member_count?: number; profiles?: { name: string }; }
-// 🌟 회계 내역 인터페이스 추가
 interface Transaction { id: number; date: string; type: 'income' | 'expense'; amount: number; description: string; receipt_url: string | null; created_at: string; }
 
 export default function AdminPage() {
-  const [activeTab, setActiveTab] = useState<'members' | 'files' | 'folders' | 'categories' | 'chat' | 'accounting'>('members'); // 🌟 accounting 탭 추가
+  const [activeTab, setActiveTab] = useState<'members' | 'files' | 'folders' | 'categories' | 'chat' | 'accounting'>('members');
 
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [storageFiles, setStorageFiles] = useState<any[]>([]);
   const [folders, setFolders] = useState<any[]>([]);
   const [categories, setCategories] = useState<BoardCategory[]>([]);
   const [customRooms, setCustomRooms] = useState<CustomRoom[]>([]); 
-  const [transactions, setTransactions] = useState<Transaction[]>([]); // 🌟 회계 내역 상태 추가
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
 
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false);
   const [isBatchOpen, setIsBatchOpen] = useState(false);
   
+  // 🌟 회원 정보 수정 모달 상태
+  const [isEditMemberModalOpen, setIsEditMemberModalOpen] = useState(false);
+  const [editProfile, setEditProfile] = useState<Partial<Profile> | null>(null);
+
   const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
   const [isEditFolderModalOpen, setIsEditFolderModalOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [editFolderId, setEditFolderId] = useState<number | null>(null);
   const [editFolderName, setEditFolderName] = useState('');
 
-  // 폴더에 팀 배정하기 위한 상태
   const [isAssignTeamsModalOpen, setIsAssignTeamsModalOpen] = useState(false);
   const [assignFolderId, setAssignFolderId] = useState<number | null>(null);
   const [assignFolderName, setAssignFolderName] = useState('');
@@ -48,7 +50,6 @@ export default function AdminPage() {
   const [newRole, setNewRole] = useState('member'); 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 🌟 회계 장부 모달 상태 추가
   const [isAccModalOpen, setIsAccModalOpen] = useState(false);
   const [accDate, setAccDate] = useState(new Date().toISOString().split('T')[0]);
   const [accType, setAccType] = useState<'income' | 'expense'>('expense');
@@ -58,7 +59,7 @@ export default function AdminPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const receiptInputRef = useRef<HTMLInputElement>(null); // 영수증 전용 ref
+  const receiptInputRef = useRef<HTMLInputElement>(null);
   const [uploadProgress, setUploadProgress] = useState<{current: number, total: number, isUploading: boolean}>({ current: 0, total: 0, isUploading: false });
 
   const fetchData = async () => {
@@ -74,7 +75,7 @@ export default function AdminPage() {
     
     fetchCategories();
     fetchCustomRooms();
-    fetchAccounting(); // 🌟 회계 내역 불러오기
+    fetchAccounting();
     setIsLoading(false);
   };
 
@@ -94,7 +95,6 @@ export default function AdminPage() {
     }
   };
 
-  // 🌟 회계 데이터 불러오기 함수
   const fetchAccounting = async () => {
     const { data } = await supabase.from('accounting').select('*').order('date', { ascending: false }).order('created_at', { ascending: false });
     if (data) setTransactions(data as Transaction[]);
@@ -102,7 +102,6 @@ export default function AdminPage() {
 
   useEffect(() => { fetchData(); }, []);
 
-  // --- 카테고리 관리 ---
   const handleSaveCategory = async () => { 
     if (!newCatName.trim()) return alert('카테고리 이름을 입력하세요!');
     const payload = { name: newCatName, parent_id: newCatParentId ? parseInt(newCatParentId) : null, is_admin_only: newCatIsAdmin };
@@ -117,7 +116,6 @@ export default function AdminPage() {
     fetchCategories();
   };
 
-  // --- 팀 폴더 관리 ---
   const handleCreateFolder = async () => { 
     if (!newFolderName.trim()) return alert('폴더 이름을 입력해주세요!');
     const { error } = await supabase.from('team_folders').insert([{ name: newFolderName }]);
@@ -143,7 +141,6 @@ export default function AdminPage() {
     else fetchData();
   };
 
-  // 폴더에 팀 배정 모달 열기
   const openAssignTeamsModal = async (folderId: number, folderName: string) => {
     setIsLoading(true);
     const { data } = await supabase.from('teams').select('id, name, folder_id').order('name');
@@ -157,7 +154,6 @@ export default function AdminPage() {
     setIsLoading(false);
   };
 
-  // 팀 배정 저장하기
   const handleSaveTeamAssignments = async () => {
     if (!assignFolderId) return;
     setIsLoading(true);
@@ -179,7 +175,6 @@ export default function AdminPage() {
     }
   };
 
-  // 🌟 회계 내역 추가 함수
   const handleSaveTransaction = async () => {
     if (!accDate || !accAmount || !accDesc) return alert('날짜, 금액, 내역을 모두 입력해주세요.');
     setIsSubmitting(true);
@@ -216,7 +211,6 @@ export default function AdminPage() {
     }
   };
 
-  // 🌟 회계 내역 삭제 함수
   const handleDeleteTransaction = async (id: number) => {
     if (!confirm('이 내역을 삭제하시겠습니까?')) return;
     await supabase.from('accounting').delete().eq('id', id);
@@ -270,7 +264,7 @@ export default function AdminPage() {
     } catch (err: any) { alert('방 삭제 중 오류가 발생했습니다: ' + err.message); }
   };
 
-  // --- 부원 관리 함수 ---
+  // 🌟 (수정) API를 통해 계정을 생성하여 자동 로그인 방지
   const handleManualRegister = async () => {
     if (!newName || !newStudentId || !newPhone) return alert('이름, 학번, 전화번호를 모두 입력해주세요.');
     if (newPhone.length < 6) return alert('비밀번호로 사용될 전화번호는 6자리 이상이어야 합니다.');
@@ -279,16 +273,23 @@ export default function AdminPage() {
     const pseudoEmail = `${newStudentId}@bandon.com`;
 
     try {
-      const { data: authData, error: authError } = await supabase.auth.signUp({ email: pseudoEmail, password: newPhone });
-      if (authError) {
-        if (authError.message.includes('already registered')) alert('이미 등록된 학번입니다!');
-        else alert('계정 생성 에러: ' + authError.message);
+      // API 라우트를 호출하여 서비스 롤로 계정 생성
+      const res = await fetch('/api/create-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: pseudoEmail, password: newPhone })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        if (data.error?.includes('already registered') || data.error?.includes('already exists')) alert('이미 등록된 학번입니다!');
+        else alert('계정 생성 에러: ' + data.error);
         setIsSubmitting(false); return;
       }
 
-      if (authData.user) {
+      if (data.user) {
         const { error: profileError } = await supabase.from('profiles').upsert({
-          id: authData.user.id, name: newName, student_id: newStudentId, phone: newPhone, role: newRole, session: '미정', can_reserve: true, can_post: true, enrollment_status: '재학'
+          id: data.user.id, name: newName, student_id: newStudentId, phone: newPhone, role: newRole, session: '미정', can_reserve: true, can_post: true, enrollment_status: '재학'
         });
         if (profileError) throw profileError;
         alert(`[${newName}] 부원이 명단에 성공적으로 추가되었습니다!\n\n아이디: ${newStudentId}\n초기 비밀번호: ${newPhone}`);
@@ -299,6 +300,7 @@ export default function AdminPage() {
     } finally { setIsSubmitting(false); }
   };
 
+  // 🌟 (수정) 일괄 등록 시에도 API를 호출하도록 변경
   const handleBatchUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
@@ -344,11 +346,19 @@ export default function AdminPage() {
           const pseudoEmail = `${studentId}@bandon.com`;
           
           try {
-            const { data: authData, error: authError } = await supabase.auth.signUp({ email: pseudoEmail, password: phone });
-            if (authError) failCount++;
-            else if (authData.user) {
+            // API 호출
+            const res = await fetch('/api/create-user', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: pseudoEmail, password: phone })
+            });
+            const resData = await res.json();
+            
+            if (!res.ok) { failCount++; continue; }
+
+            if (resData.user) {
               const { error: profileError } = await supabase.from('profiles').upsert({
-                id: authData.user.id, name: name, student_id: studentId, phone: phone, college: college, major: major, grade: grade, enrollment_status: enrollmentStatus, role: 'member', session: '미정', can_reserve: true, can_post: true
+                id: resData.user.id, name: name, student_id: studentId, phone: phone, college: college, major: major, grade: grade, enrollment_status: enrollmentStatus, role: 'member', session: '미정', can_reserve: true, can_post: true
               });
               if (profileError) throw profileError;
               successCount++;
@@ -374,7 +384,7 @@ export default function AdminPage() {
 
   const exportToExcel = () => {
     const headers = ['성명', '단대', '학과(부)', '학번', '학년', '재학/휴학', '연락처', '등급', '소속 팀', '주 세션'];
-    const rows = profiles.map(p => [ p.name, p.college || '', p.major || '', p.student_id, p.grade || '', p.enrollment_status || '재학', p.phone || '', p.role === 'president' ? '회장' : p.role === 'leader' ? '팀장' : '부원', p.team_names?.join(' / ') || '소속 없음', p.session || '미정' ]);
+    const rows = profiles.map(p => [ p.name, p.college || '', p.major || '', p.student_id, p.grade || '', p.enrollment_status || '재학', p.phone || '', p.role === 'president' ? '회장' : p.role === 'admin' ? '관리자' : p.role === 'leader' ? '팀장' : '부원', p.team_names?.join(' / ') || '소속 없음', p.session || '미정' ]);
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "부원명단");
@@ -410,12 +420,45 @@ export default function AdminPage() {
     if (error) alert('파일 삭제 실패: ' + error.message);
     else { alert('파일이 서버에서 완전히 삭제되었습니다.'); fetchData(); }
   };
+
+  // 🌟 (신규) 회원 정보 수정 모달 열기
+  const handleOpenEditMember = (profile: Profile) => {
+    setEditProfile(profile);
+    setIsEditMemberModalOpen(true);
+  };
+
+  // 🌟 (신규) 회원 정보 수정 저장하기
+  const handleSaveEditMember = async () => {
+    if (!editProfile?.id || !editProfile.name || !editProfile.student_id) return alert('이름과 학번은 필수입니다.');
+    setIsSubmitting(true);
+    const { error } = await supabase.from('profiles').update({
+      name: editProfile.name,
+      student_id: editProfile.student_id,
+      phone: editProfile.phone,
+      college: editProfile.college,
+      major: editProfile.major,
+      grade: editProfile.grade,
+      enrollment_status: editProfile.enrollment_status,
+      session: editProfile.session,
+      role: editProfile.role
+    }).eq('id', editProfile.id);
+
+    if (error) alert('수정 실패: ' + error.message);
+    else {
+      alert('회원 정보가 수정되었습니다!');
+      setIsEditMemberModalOpen(false);
+      fetchData();
+    }
+    setIsSubmitting(false);
+  };
   
   const filteredProfiles = profiles.filter(p => p.name?.includes(searchTerm) || p.student_id?.includes(searchTerm) || p.major?.includes(searchTerm));
   const mainCategories = categories.filter(c => c.parent_id === null);
 
+  // 🌟 (수정) 관리자 뱃지 분리
   const getRoleBadge = (role: string) => {
-    if (role === 'president' || role === 'admin') return <span className="bg-primary/10 dark:bg-primary/20 text-primary text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">회장</span>;
+    if (role === 'president') return <span className="bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">회장</span>;
+    if (role === 'admin') return <span className="bg-primary/10 dark:bg-primary/20 text-primary border border-primary/20 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">관리자</span>;
     if (role === 'leader') return <span className="bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">팀장</span>;
     return <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">부원</span>;
   };
@@ -425,7 +468,6 @@ export default function AdminPage() {
     return <span className="bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold px-1.5 py-0.5 rounded">재학</span>;
   };
 
-  // 🌟 회계 계산 로직
   const totalIncome = transactions.filter(t => t.type === 'income').reduce((acc, curr) => acc + curr.amount, 0);
   const totalExpense = transactions.filter(t => t.type === 'expense').reduce((acc, curr) => acc + curr.amount, 0);
   const totalBalance = totalIncome - totalExpense;
@@ -433,12 +475,11 @@ export default function AdminPage() {
   return (
     <div className="flex-1 flex flex-col h-full bg-bg-base text-text-base font-sans overflow-hidden transition-colors duration-300 relative">
       <header className="h-16 shrink-0 border-b border-border-base flex items-center justify-between px-6 lg:px-8 bg-bg-surface/80 backdrop-blur-md z-10 transition-colors">
-        <h2 className="text-xl font-bold flex items-center gap-2 text-text-base"><Shield className="w-5 h-5 text-primary" /> 관리자 데스크 (회장 전용)</h2>
+        <h2 className="text-xl font-bold flex items-center gap-2 text-text-base"><Shield className="w-5 h-5 text-primary" /> 관리자 데스크 (회장/관리자 전용)</h2>
       </header>
 
       <div className="flex px-6 lg:px-8 border-b border-border-base bg-bg-surface shrink-0 overflow-x-auto custom-scrollbar transition-colors">
         <button onClick={() => setActiveTab('members')} className={`px-4 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${activeTab === 'members' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-base'}`}><Users className="w-4 h-4" /> 부원 관리</button>
-        {/* 🌟 회계 관리 탭 추가 */}
         <button onClick={() => setActiveTab('accounting')} className={`px-4 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${activeTab === 'accounting' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-base'}`}><Wallet className="w-4 h-4" /> 회계 관리</button>
         <button onClick={() => setActiveTab('folders')} className={`px-4 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${activeTab === 'folders' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-base'}`}><FolderTree className="w-4 h-4" /> 팀 폴더 관리</button>
         <button onClick={() => setActiveTab('chat')} className={`px-4 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${activeTab === 'chat' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-base'}`}><MessageSquare className="w-4 h-4" /> 단체방 관리</button>
@@ -449,11 +490,9 @@ export default function AdminPage() {
       <main className="flex-1 overflow-auto custom-scrollbar p-6 lg:p-8">
         <div className="max-w-6xl mx-auto space-y-6 pb-20">
           
-          {/* 🌟 회계 관리 탭 콘텐츠 */}
           {activeTab === 'accounting' && (
             <div className="space-y-6 animate-in fade-in duration-300">
               
-              {/* 회계 요약 대시보드 */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-bg-surface border border-border-base p-6 rounded-2xl shadow-sm">
                   <div className="flex items-center gap-2 text-text-muted mb-2 font-bold text-sm"><Wallet className="w-5 h-5 text-primary" /> 총 동아리 잔액</div>
@@ -469,7 +508,6 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              {/* 회계 내역 리스트 */}
               <div className="bg-bg-surface p-6 rounded-2xl border border-border-base shadow-sm">
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-lg font-bold text-text-base flex items-center gap-2"><Receipt className="w-5 h-5 text-primary" /> 입출금 내역</h3>
@@ -558,7 +596,7 @@ export default function AdminPage() {
                         <th className="p-4 text-xs font-bold text-text-muted uppercase tracking-wider">소속 학과 / 학년</th>
                         <th className="p-4 text-xs font-bold text-text-muted uppercase tracking-wider text-center">등급 (Role)</th>
                         <th className="p-4 text-xs font-bold text-text-muted uppercase tracking-wider text-center">예약 / 글 권한</th>
-                        <th className="p-4 text-xs font-bold text-text-muted uppercase tracking-wider text-center w-16">관리</th>
+                        <th className="p-4 text-xs font-bold text-text-muted uppercase tracking-wider text-center w-24">관리</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border-base">
@@ -583,12 +621,13 @@ export default function AdminPage() {
                           </td>
                           <td className="p-4 text-center">
                             <select 
-                              value={profile.role === 'admin' ? 'president' : profile.role} 
+                              value={profile.role} 
                               onChange={(e) => changeRole(profile.id, e.target.value)}
                               className="text-xs font-bold bg-bg-base border border-border-base rounded-lg px-2 py-1 outline-none focus:border-primary text-text-base"
                             >
                               <option value="member">부원</option>
                               <option value="leader">팀장</option>
+                              <option value="admin">관리자</option>
                               <option value="president">회장</option>
                             </select>
                           </td>
@@ -599,9 +638,15 @@ export default function AdminPage() {
                             </div>
                           </td>
                           <td className="p-4 text-center transition-colors">
-                            <button onClick={() => handleDeleteMember(profile.id, profile.name)} className="p-2 text-text-muted hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-colors" title="부원 영구 삭제">
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <div className="flex gap-1 justify-center">
+                              {/* 🌟 (신규) 정보 수정 버튼 */}
+                              <button onClick={() => handleOpenEditMember(profile)} className="p-2 text-text-muted hover:text-primary hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" title="정보 수정">
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => handleDeleteMember(profile.id, profile.name)} className="p-2 text-text-muted hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-colors" title="부원 영구 삭제">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -793,7 +838,98 @@ export default function AdminPage() {
         </div>
       </main>
 
-      {/* 🌟 회계 내역 추가 모달 */}
+      {/* 🌟 (신규) 회원 정보 수정 모달 */}
+      <Transition appear show={isEditMemberModalOpen} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setIsEditMemberModalOpen(false)}>
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Dialog.Panel className="w-full max-w-md rounded-3xl bg-bg-surface border border-border-base p-6 shadow-2xl">
+              <div className="flex justify-between items-center mb-6">
+                <Dialog.Title className="text-xl font-bold text-text-base flex items-center gap-2"><Edit2 className="w-5 h-5 text-primary" /> 회원 정보 수정</Dialog.Title>
+                <button onClick={() => setIsEditMemberModalOpen(false)} className="text-text-muted hover:text-text-base"><CloseIcon className="w-5 h-5"/></button>
+              </div>
+
+              <div className="space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-text-muted mb-1 block">이름</label>
+                    <input type="text" value={editProfile?.name || ''} onChange={e => setEditProfile(prev => prev ? {...prev, name: e.target.value} : null)} className="w-full bg-bg-base border border-border-base p-3 rounded-xl text-sm outline-none focus:border-primary" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-text-muted mb-1 block">학번</label>
+                    <input type="text" value={editProfile?.student_id || ''} onChange={e => setEditProfile(prev => prev ? {...prev, student_id: e.target.value} : null)} className="w-full bg-bg-base border border-border-base p-3 rounded-xl text-sm outline-none focus:border-primary" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-text-muted mb-1 block">전화번호</label>
+                    <input type="text" value={editProfile?.phone || ''} onChange={e => setEditProfile(prev => prev ? {...prev, phone: e.target.value} : null)} className="w-full bg-bg-base border border-border-base p-3 rounded-xl text-sm outline-none focus:border-primary" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-text-muted mb-1 block">권한 등급</label>
+                    <select value={editProfile?.role || 'member'} onChange={e => setEditProfile(prev => prev ? {...prev, role: e.target.value} : null)} className="w-full bg-bg-base border border-border-base p-3 rounded-xl text-sm outline-none focus:border-primary">
+                      <option value="member">부원</option>
+                      <option value="leader">팀장</option>
+                      <option value="admin">관리자</option>
+                      <option value="president">회장</option>
+                    </select>
+                  </div>
+                </div>
+
+                <hr className="border-border-base my-2" />
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-text-muted mb-1 block">단과대학</label>
+                    <input type="text" value={editProfile?.college || ''} onChange={e => setEditProfile(prev => prev ? {...prev, college: e.target.value} : null)} className="w-full bg-bg-base border border-border-base p-3 rounded-xl text-sm outline-none focus:border-primary" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-text-muted mb-1 block">학과(부)</label>
+                    <input type="text" value={editProfile?.major || ''} onChange={e => setEditProfile(prev => prev ? {...prev, major: e.target.value} : null)} className="w-full bg-bg-base border border-border-base p-3 rounded-xl text-sm outline-none focus:border-primary" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-text-muted mb-1 block">학년</label>
+                    <select value={editProfile?.grade || ''} onChange={e => setEditProfile(prev => prev ? {...prev, grade: e.target.value} : null)} className="w-full bg-bg-base border border-border-base p-3 rounded-xl text-sm outline-none focus:border-primary">
+                      <option value="">선택</option>
+                      <option value="1">1학년</option><option value="2">2학년</option><option value="3">3학년</option><option value="4">4학년</option><option value="5">5학년</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-text-muted mb-1 block">재학/휴학</label>
+                    <select value={editProfile?.enrollment_status || '재학'} onChange={e => setEditProfile(prev => prev ? {...prev, enrollment_status: e.target.value} : null)} className="w-full bg-bg-base border border-border-base p-3 rounded-xl text-sm outline-none focus:border-primary">
+                      <option value="재학">재학</option>
+                      <option value="휴학">휴학</option>
+                      <option value="졸업">졸업</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-text-muted mb-1 block">주 세션</label>
+                  <select value={editProfile?.session || '미정'} onChange={e => setEditProfile(prev => prev ? {...prev, session: e.target.value} : null)} className="w-full bg-bg-base border border-border-base p-3 rounded-xl text-sm outline-none focus:border-primary">
+                    <option value="미정">미정</option>
+                    <option value="보컬">보컬</option><option value="일렉기타">일렉기타</option>
+                    <option value="베이스">베이스</option><option value="드럼">드럼</option>
+                    <option value="키보드">키보드</option><option value="어쿠스틱기타">어쿠스틱기타</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button onClick={() => setIsEditMemberModalOpen(false)} className="flex-1 py-3.5 bg-bg-base border border-border-base text-text-base font-bold rounded-xl hover:brightness-95 transition">취소</button>
+                <button onClick={handleSaveEditMember} disabled={isSubmitting} className="flex-1 py-3.5 bg-primary text-white font-bold rounded-xl hover:brightness-110 disabled:opacity-50 transition shadow-lg shadow-primary/20">
+                  {isSubmitting ? '저장 중...' : '수정 완료'}
+                </button>
+              </div>
+            </Dialog.Panel>
+          </div>
+        </Dialog>
+      </Transition>
+
       <Transition appear show={isAccModalOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={() => setIsAccModalOpen(false)}>
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
@@ -842,7 +978,6 @@ export default function AdminPage() {
         </Dialog>
       </Transition>
 
-      {/* 기타 기존 모달들... */}
       <Transition appear show={isCategoryModalOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={() => setIsCategoryModalOpen(false)}>
           <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
@@ -888,7 +1023,7 @@ export default function AdminPage() {
             <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
               <Dialog.Panel className="w-full max-w-sm rounded-3xl bg-bg-surface border border-border-base p-6 shadow-2xl transition-colors">
                 <div className="flex justify-between items-center mb-6 transition-colors">
-                  <Dialog.Title className="text-xl font-bold text-text-base flex items-center gap-2"><UserPlus className="w-5 h-5 text-primary"/> 신규 부원 계정 발급</Dialog.Title>
+                  <Dialog.Title className="text-xl font-bold text-text-base flex items-center gap-2"><UserPlus className="w-5 h-5 text-primary"/> 신규 부원 등록</Dialog.Title>
                   <button onClick={() => setIsAddMemberModalOpen(false)} className="text-text-muted hover:text-text-base transition p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/50"><CloseIcon className="w-5 h-5"/></button>
                 </div>
                 
@@ -904,6 +1039,7 @@ export default function AdminPage() {
                     <select value={newRole} onChange={e => setNewRole(e.target.value)} className="w-full bg-bg-base border border-border-base p-3.5 rounded-xl text-text-base outline-none focus:border-primary transition-colors">
                       <option value="member">일반 부원</option>
                       <option value="leader">팀장 (부분 관리자)</option>
+                      <option value="admin">관리자 (부회장/임원)</option>
                       <option value="president">회장 (최고 관리자)</option>
                     </select>
                   </div>
