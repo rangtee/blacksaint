@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, Fragment, useRef } from 'react';
-import { Users, Download, UserPlus, Search, Shield, ChevronDown, FileSpreadsheet, ToggleLeft, ToggleRight, HardDrive, Image as ImageIcon, Trash2, FolderTree, Folder, Edit2, LayoutList, Plus, X as CloseIcon, UploadCloud, FolderPlus, Loader2, MessageSquare, ListChecks } from 'lucide-react';
+import { Users, Download, UserPlus, Search, Shield, ChevronDown, FileSpreadsheet, ToggleLeft, ToggleRight, HardDrive, Image as ImageIcon, Trash2, FolderTree, Folder, Edit2, LayoutList, Plus, X as CloseIcon, UploadCloud, FolderPlus, Loader2, MessageSquare, ListChecks, Wallet, TrendingUp, TrendingDown, Receipt } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 import { supabase } from '../../lib/supabase';
 import * as XLSX from 'xlsx';
@@ -8,15 +8,18 @@ import * as XLSX from 'xlsx';
 interface Profile { id: string; name: string; student_id: string; session: string; role: string; can_reserve: boolean; can_post: boolean; phone?: string; team_names?: string[]; college?: string; major?: string; grade?: string; enrollment_status?: string; }
 interface BoardCategory { id: number; name: string; parent_id: number | null; is_admin_only: boolean; }
 interface CustomRoom { id: string; name: string; created_at: string; member_count?: number; profiles?: { name: string }; }
+// 🌟 회계 내역 인터페이스 추가
+interface Transaction { id: number; date: string; type: 'income' | 'expense'; amount: number; description: string; receipt_url: string | null; created_at: string; }
 
 export default function AdminPage() {
-  const [activeTab, setActiveTab] = useState<'members' | 'files' | 'folders' | 'categories' | 'chat'>('members');
+  const [activeTab, setActiveTab] = useState<'members' | 'files' | 'folders' | 'categories' | 'chat' | 'accounting'>('members'); // 🌟 accounting 탭 추가
 
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [storageFiles, setStorageFiles] = useState<any[]>([]);
   const [folders, setFolders] = useState<any[]>([]);
   const [categories, setCategories] = useState<BoardCategory[]>([]);
   const [customRooms, setCustomRooms] = useState<CustomRoom[]>([]); 
+  const [transactions, setTransactions] = useState<Transaction[]>([]); // 🌟 회계 내역 상태 추가
 
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false);
@@ -45,9 +48,17 @@ export default function AdminPage() {
   const [newRole, setNewRole] = useState('member'); 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // 🌟 회계 장부 모달 상태 추가
+  const [isAccModalOpen, setIsAccModalOpen] = useState(false);
+  const [accDate, setAccDate] = useState(new Date().toISOString().split('T')[0]);
+  const [accType, setAccType] = useState<'income' | 'expense'>('expense');
+  const [accAmount, setAccAmount] = useState('');
+  const [accDesc, setAccDesc] = useState('');
+
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const receiptInputRef = useRef<HTMLInputElement>(null); // 영수증 전용 ref
   const [uploadProgress, setUploadProgress] = useState<{current: number, total: number, isUploading: boolean}>({ current: 0, total: 0, isUploading: false });
 
   const fetchData = async () => {
@@ -63,6 +74,7 @@ export default function AdminPage() {
     
     fetchCategories();
     fetchCustomRooms();
+    fetchAccounting(); // 🌟 회계 내역 불러오기
     setIsLoading(false);
   };
 
@@ -80,6 +92,12 @@ export default function AdminPage() {
       }));
       setCustomRooms(roomsWithCounts);
     }
+  };
+
+  // 🌟 회계 데이터 불러오기 함수
+  const fetchAccounting = async () => {
+    const { data } = await supabase.from('accounting').select('*').order('date', { ascending: false }).order('created_at', { ascending: false });
+    if (data) setTransactions(data as Transaction[]);
   };
 
   useEffect(() => { fetchData(); }, []);
@@ -159,6 +177,50 @@ export default function AdminPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // 🌟 회계 내역 추가 함수
+  const handleSaveTransaction = async () => {
+    if (!accDate || !accAmount || !accDesc) return alert('날짜, 금액, 내역을 모두 입력해주세요.');
+    setIsSubmitting(true);
+    try {
+      let receiptUrl = null;
+      if (receiptInputRef.current?.files?.[0]) {
+         const file = receiptInputRef.current.files[0];
+         const filePath = `receipt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${file.name.split('.').pop()}`;
+         const { error: uploadError } = await supabase.storage.from('receipts').upload(filePath, file);
+         if (uploadError) throw uploadError;
+         const { data } = supabase.storage.from('receipts').getPublicUrl(filePath);
+         receiptUrl = data.publicUrl;
+      }
+
+      const { error } = await supabase.from('accounting').insert([{
+         date: accDate,
+         type: accType,
+         amount: parseInt(accAmount),
+         description: accDesc,
+         receipt_url: receiptUrl
+      }]);
+
+      if (error) throw error;
+      
+      alert('내역이 추가되었습니다.');
+      setIsAccModalOpen(false);
+      setAccAmount(''); setAccDesc('');
+      if (receiptInputRef.current) receiptInputRef.current.value = '';
+      fetchAccounting();
+    } catch(err: any) {
+      alert('저장 실패: ' + err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // 🌟 회계 내역 삭제 함수
+  const handleDeleteTransaction = async (id: number) => {
+    if (!confirm('이 내역을 삭제하시겠습니까?')) return;
+    await supabase.from('accounting').delete().eq('id', id);
+    fetchAccounting();
   };
 
   const exportFolderDataToExcel = async (folderId: number, folderName: string) => {
@@ -363,6 +425,11 @@ export default function AdminPage() {
     return <span className="bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold px-1.5 py-0.5 rounded">재학</span>;
   };
 
+  // 🌟 회계 계산 로직
+  const totalIncome = transactions.filter(t => t.type === 'income').reduce((acc, curr) => acc + curr.amount, 0);
+  const totalExpense = transactions.filter(t => t.type === 'expense').reduce((acc, curr) => acc + curr.amount, 0);
+  const totalBalance = totalIncome - totalExpense;
+
   return (
     <div className="flex-1 flex flex-col h-full bg-bg-base text-text-base font-sans overflow-hidden transition-colors duration-300 relative">
       <header className="h-16 shrink-0 border-b border-border-base flex items-center justify-between px-6 lg:px-8 bg-bg-surface/80 backdrop-blur-md z-10 transition-colors">
@@ -371,6 +438,8 @@ export default function AdminPage() {
 
       <div className="flex px-6 lg:px-8 border-b border-border-base bg-bg-surface shrink-0 overflow-x-auto custom-scrollbar transition-colors">
         <button onClick={() => setActiveTab('members')} className={`px-4 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${activeTab === 'members' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-base'}`}><Users className="w-4 h-4" /> 부원 관리</button>
+        {/* 🌟 회계 관리 탭 추가 */}
+        <button onClick={() => setActiveTab('accounting')} className={`px-4 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${activeTab === 'accounting' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-base'}`}><Wallet className="w-4 h-4" /> 회계 관리</button>
         <button onClick={() => setActiveTab('folders')} className={`px-4 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${activeTab === 'folders' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-base'}`}><FolderTree className="w-4 h-4" /> 팀 폴더 관리</button>
         <button onClick={() => setActiveTab('chat')} className={`px-4 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${activeTab === 'chat' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-base'}`}><MessageSquare className="w-4 h-4" /> 단체방 관리</button>
         <button onClick={() => setActiveTab('categories')} className={`px-4 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${activeTab === 'categories' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-base'}`}><LayoutList className="w-4 h-4" /> 게시판 관리</button>
@@ -380,6 +449,85 @@ export default function AdminPage() {
       <main className="flex-1 overflow-auto custom-scrollbar p-6 lg:p-8">
         <div className="max-w-6xl mx-auto space-y-6 pb-20">
           
+          {/* 🌟 회계 관리 탭 콘텐츠 */}
+          {activeTab === 'accounting' && (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              
+              {/* 회계 요약 대시보드 */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-bg-surface border border-border-base p-6 rounded-2xl shadow-sm">
+                  <div className="flex items-center gap-2 text-text-muted mb-2 font-bold text-sm"><Wallet className="w-5 h-5 text-primary" /> 총 동아리 잔액</div>
+                  <div className="text-3xl font-black text-text-base">{totalBalance.toLocaleString()} <span className="text-lg text-text-muted font-bold">원</span></div>
+                </div>
+                <div className="bg-bg-surface border border-border-base p-6 rounded-2xl shadow-sm">
+                  <div className="flex items-center gap-2 text-emerald-500 mb-2 font-bold text-sm"><TrendingUp className="w-5 h-5" /> 누적 수입</div>
+                  <div className="text-2xl font-black text-emerald-500">{totalIncome.toLocaleString()} <span className="text-lg opacity-70 font-bold">원</span></div>
+                </div>
+                <div className="bg-bg-surface border border-border-base p-6 rounded-2xl shadow-sm">
+                  <div className="flex items-center gap-2 text-rose-500 mb-2 font-bold text-sm"><TrendingDown className="w-5 h-5" /> 누적 지출</div>
+                  <div className="text-2xl font-black text-rose-500">{totalExpense.toLocaleString()} <span className="text-lg opacity-70 font-bold">원</span></div>
+                </div>
+              </div>
+
+              {/* 회계 내역 리스트 */}
+              <div className="bg-bg-surface p-6 rounded-2xl border border-border-base shadow-sm">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-lg font-bold text-text-base flex items-center gap-2"><Receipt className="w-5 h-5 text-primary" /> 입출금 내역</h3>
+                  <button onClick={() => setIsAccModalOpen(true)} className="px-4 py-2 bg-primary hover:brightness-110 text-white text-sm font-bold rounded-lg transition-all flex items-center gap-2 shadow-lg shadow-primary/20">
+                    <Plus className="w-4 h-4" /> 내역 추가
+                  </button>
+                </div>
+
+                <div className="border border-border-base rounded-xl overflow-hidden">
+                  <table className="w-full text-left min-w-150">
+                    <thead>
+                      <tr className="bg-slate-100 dark:bg-slate-800/50 border-b border-border-base">
+                        <th className="p-4 text-xs font-bold text-text-muted">날짜</th>
+                        <th className="p-4 text-xs font-bold text-text-muted">구분</th>
+                        <th className="p-4 text-xs font-bold text-text-muted">적요(내역)</th>
+                        <th className="p-4 text-xs font-bold text-text-muted text-right">금액</th>
+                        <th className="p-4 text-xs font-bold text-text-muted text-center">증빙/영수증</th>
+                        <th className="p-4 text-xs font-bold text-text-muted text-center w-16">관리</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border-base">
+                      {transactions.length === 0 ? (
+                        <tr><td colSpan={6} className="p-8 text-center text-text-muted">등록된 내역이 없습니다.</td></tr>
+                      ) : (
+                        transactions.map(t => (
+                          <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                            <td className="p-4 text-sm font-medium text-text-base">{t.date}</td>
+                            <td className="p-4 text-sm font-bold">
+                              {t.type === 'income' ? <span className="text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-1 rounded">수입</span> : <span className="text-rose-500 bg-rose-50 dark:bg-rose-500/10 px-2 py-1 rounded">지출</span>}
+                            </td>
+                            <td className="p-4 text-sm text-text-base">{t.description}</td>
+                            <td className={`p-4 text-sm font-bold text-right ${t.type === 'income' ? 'text-emerald-500' : 'text-rose-500'}`}>
+                              {t.type === 'income' ? '+' : '-'}{t.amount.toLocaleString()}원
+                            </td>
+                            <td className="p-4 text-center">
+                              {t.receipt_url ? (
+                                <a href={t.receipt_url} target="_blank" rel="noreferrer" className="inline-block p-1.5 bg-slate-100 dark:bg-slate-800 text-text-muted hover:text-primary rounded-lg transition" title="영수증 보기">
+                                  <ImageIcon className="w-4 h-4" />
+                                </a>
+                              ) : (
+                                <span className="text-xs text-text-muted">-</span>
+                              )}
+                            </td>
+                            <td className="p-4 text-center">
+                              <button onClick={() => handleDeleteTransaction(t.id)} className="p-2 text-text-muted hover:text-rose-500 rounded-lg transition" title="삭제">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'members' && (
             <div className="space-y-6 animate-in fade-in duration-300">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-bg-surface p-4 rounded-2xl border border-border-base shadow-sm transition-colors">
@@ -645,6 +793,56 @@ export default function AdminPage() {
         </div>
       </main>
 
+      {/* 🌟 회계 내역 추가 모달 */}
+      <Transition appear show={isAccModalOpen} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setIsAccModalOpen(false)}>
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Dialog.Panel className="w-full max-w-sm rounded-3xl bg-bg-surface border border-border-base p-6 shadow-2xl">
+              <div className="flex justify-between items-center mb-6">
+                <Dialog.Title className="text-xl font-bold text-text-base flex items-center gap-2"><Receipt className="w-5 h-5 text-primary" /> 회계 내역 추가</Dialog.Title>
+                <button onClick={() => setIsAccModalOpen(false)} className="text-text-muted hover:text-text-base"><CloseIcon className="w-5 h-5"/></button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex bg-bg-base p-1 rounded-xl border border-border-base">
+                  <button onClick={() => setAccType('income')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${accType === 'income' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 shadow-sm' : 'text-text-muted'}`}>수입 (+)</button>
+                  <button onClick={() => setAccType('expense')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${accType === 'expense' ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400 shadow-sm' : 'text-text-muted'}`}>지출 (-)</button>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-text-muted block mb-1.5">날짜</label>
+                  <input type="date" value={accDate} onChange={e => setAccDate(e.target.value)} className="w-full bg-bg-base border border-border-base p-3.5 rounded-xl text-sm outline-none focus:border-primary scheme-light dark:scheme-dark" />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-text-muted block mb-1.5">금액</label>
+                  <div className="flex items-center bg-bg-base border border-border-base rounded-xl pr-4 focus-within:border-primary">
+                    <input type="number" placeholder="예: 50000" value={accAmount} onChange={e => setAccAmount(e.target.value)} className="w-full bg-transparent p-3.5 text-sm outline-none text-right" />
+                    <span className="text-text-muted font-bold text-sm ml-2">원</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-text-muted block mb-1.5">적요 (내역 설명)</label>
+                  <input type="text" placeholder="예: 3월 정기 회비, 대관료 등" value={accDesc} onChange={e => setAccDesc(e.target.value)} className="w-full bg-bg-base border border-border-base p-3.5 rounded-xl text-sm outline-none focus:border-primary" />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-text-muted block mb-1.5">영수증 / 증빙 자료 첨부 (선택)</label>
+                  <input type="file" accept="image/*" ref={receiptInputRef} className="w-full text-xs text-text-muted file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
+                </div>
+              </div>
+
+              <button onClick={handleSaveTransaction} disabled={isSubmitting} className="w-full py-4 mt-8 bg-primary text-white font-bold rounded-xl shadow-lg shadow-primary/20 hover:brightness-110 disabled:opacity-50 transition">
+                {isSubmitting ? '저장 중...' : '내역 저장하기'}
+              </button>
+            </Dialog.Panel>
+          </div>
+        </Dialog>
+      </Transition>
+
+      {/* 기타 기존 모달들... */}
       <Transition appear show={isCategoryModalOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={() => setIsCategoryModalOpen(false)}>
           <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
@@ -812,7 +1010,6 @@ export default function AdminPage() {
         </Dialog>
       </Transition>
 
-      {/* 🌟 모달: 팀 배정 */}
       <Transition appear show={isAssignTeamsModalOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={() => setIsAssignTeamsModalOpen(false)}>
           <div className="fixed inset-0 bg-black/50 dark:bg-black/80 backdrop-blur-sm" />
