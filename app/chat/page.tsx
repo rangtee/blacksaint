@@ -14,19 +14,17 @@ interface Message {
 }
 interface Room { type: 'global' | 'team' | 'direct' | 'custom'; id: string; name: string; }
 
-// 채팅방 목록을 위한 인터페이스 (카톡 스타일)
 interface ChatListRoom {
-  type: 'direct' | 'custom';
+  type: 'direct' | 'custom' | 'team';
   id: string;
   name: string;
   image_url?: string;
   lastMessage: string;
   lastMessageTime: string;
-  timestamp: number; // 정렬용
+  timestamp: number; 
   isFav?: boolean;
 }
 
-// 🌟 이름과 기수를 합쳐서 보여주는 헬퍼 함수
 const formatNameWithGen = (name: string, gen?: string | null) => {
   return gen && gen.trim() !== '' ? `${name}(${gen})` : name;
 };
@@ -35,7 +33,6 @@ export default function ChatPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [allUsers, setAllUsers] = useState<Profile[]>([]);
   
-  // 카톡 스타일 채팅방 목록
   const [activeChatRooms, setActiveChatRooms] = useState<ChatListRoom[]>([]);
   
   const [activeRoom, setActiveRoom] = useState<Room>({ type: 'global', id: 'all', name: '동아리 전체 광장' });
@@ -46,25 +43,20 @@ export default function ChatPage() {
   
   const [searchTerm, setSearchTerm] = useState('');
   
-  // 새 1:1 대화 시작 모달
   const [isNewDirectModalOpen, setIsNewDirectModalOpen] = useState(false);
   const [directSearchTerm, setDirectSearchTerm] = useState('');
 
-  // 새 단체방 만들기 모달
   const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [newRoomSearchTerm, setNewRoomSearchTerm] = useState(''); 
   
-  // 단체방 정보 (참여자 및 나가기)
   const [isRoomInfoOpen, setIsRoomInfoOpen] = useState(false);
   const [roomMembers, setRoomMembers] = useState<any[]>([]);
 
-  // 미디어 업로드 관련
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  // 컨텍스트 메뉴 (메시지 취소 및 미디어 저장)
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, type: 'message' | 'media', msg: Message } | null>(null);
   let pressTimer = useRef<NodeJS.Timeout | null>(null);
 
@@ -73,7 +65,6 @@ export default function ChatPage() {
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 
-  // 화면 밖 클릭 시 컨텍스트 메뉴 닫기
   useEffect(() => {
     const handleClick = () => setContextMenu(null);
     window.addEventListener('click', handleClick);
@@ -94,11 +85,13 @@ export default function ChatPage() {
 
   const getDirectRoomId = (uid1: string, uid2: string) => [uid1, uid2].sort().join('_');
 
-  // 대화 기록이 있는 방 목록(1:1, 단체)을 가져와서 조립하는 함수
   const fetchActiveChatRooms = async (userId: string, profiles: Profile[]) => {
     try {
       const { data: myCustomRoomsData } = await supabase.from('custom_chat_members').select('custom_chat_rooms(id, name)').eq('user_id', userId);
       const customRooms = myCustomRoomsData?.map((d: any) => d.custom_chat_rooms).filter(Boolean) || [];
+
+      const { data: myTeamsData } = await supabase.from('team_members').select('teams(id, name, image_url)').eq('user_id', userId);
+      const teamRooms = myTeamsData?.map((d: any) => d.teams).filter(Boolean) || [];
 
       const { data: recentMessages } = await supabase
         .from('chat_messages')
@@ -106,52 +99,62 @@ export default function ChatPage() {
         .neq('room_type', 'global')
         .order('created_at', { ascending: false });
 
-      if (!recentMessages) return;
-
       const roomMap = new Map<string, ChatListRoom>();
 
-      recentMessages.forEach(msg => {
-        if (roomMap.has(msg.room_id)) return;
+      if (recentMessages) {
+        recentMessages.forEach(msg => {
+          const mapKey = `${msg.room_type}_${msg.room_id}`;
+          if (roomMap.has(mapKey)) return;
 
-        if (msg.room_type === 'direct' && msg.room_id.includes(userId)) {
-          const otherUserId = msg.room_id.split('_').find((id: string) => id !== userId);
-          const otherUser = profiles.find(p => p.id === otherUserId);
-          
-          if (otherUser) {
-            roomMap.set(msg.room_id, {
-              type: 'direct',
-              id: msg.room_id,
-              name: formatNameWithGen(otherUser.name, otherUser.generation), // 🌟 1:1 대화방 이름에 기수 추가
-              image_url: otherUser.profile_image_url,
+          if (msg.room_type === 'direct' && msg.room_id.includes(userId)) {
+            const otherUserId = msg.room_id.split('_').find((id: string) => id !== userId);
+            const otherUser = profiles.find(p => p.id === otherUserId);
+            
+            if (otherUser) {
+              roomMap.set(mapKey, {
+                type: 'direct', id: msg.room_id, name: formatNameWithGen(otherUser.name, otherUser.generation),
+                image_url: otherUser.profile_image_url,
+                lastMessage: msg.content === '미디어를 보냈습니다.' ? '사진/동영상' : msg.content,
+                lastMessageTime: new Date(msg.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+                timestamp: new Date(msg.created_at).getTime()
+              });
+            }
+          } 
+          else if (msg.room_type === 'custom' && customRooms.some(cr => cr.id.toString() === msg.room_id.toString())) {
+            const roomInfo = customRooms.find(cr => cr.id.toString() === msg.room_id.toString());
+            roomMap.set(mapKey, {
+              type: 'custom', id: msg.room_id, name: roomInfo.name,
               lastMessage: msg.content === '미디어를 보냈습니다.' ? '사진/동영상' : msg.content,
               lastMessageTime: new Date(msg.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
               timestamp: new Date(msg.created_at).getTime()
             });
           }
-        }
-        
-        if (msg.room_type === 'custom' && customRooms.some(cr => cr.id === msg.room_id)) {
-          const roomInfo = customRooms.find(cr => cr.id === msg.room_id);
-          roomMap.set(msg.room_id, {
-            type: 'custom',
-            id: msg.room_id,
-            name: roomInfo.name,
-            lastMessage: msg.content === '미디어를 보냈습니다.' ? '사진/동영상' : msg.content,
-            lastMessageTime: new Date(msg.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
-            timestamp: new Date(msg.created_at).getTime()
-          });
+          else if (msg.room_type === 'team' && teamRooms.some(tr => tr.id.toString() === msg.room_id.toString())) {
+            const teamInfo = teamRooms.find(tr => tr.id.toString() === msg.room_id.toString());
+            roomMap.set(mapKey, {
+              type: 'team', id: msg.room_id, name: `🎸 ${teamInfo.name}`,
+              image_url: teamInfo.image_url,
+              lastMessage: msg.content === '미디어를 보냈습니다.' ? '사진/동영상' : msg.content,
+              lastMessageTime: new Date(msg.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+              timestamp: new Date(msg.created_at).getTime()
+            });
+          }
+        });
+      }
+
+      customRooms.forEach(cr => {
+        const mapKey = `custom_${cr.id}`;
+        if (!roomMap.has(mapKey)) {
+          roomMap.set(mapKey, { type: 'custom', id: cr.id.toString(), name: cr.name, lastMessage: '대화 기록이 없습니다.', lastMessageTime: '', timestamp: 0 });
         }
       });
 
-      customRooms.forEach(cr => {
-        if (!roomMap.has(cr.id)) {
-          roomMap.set(cr.id, {
-            type: 'custom',
-            id: cr.id,
-            name: cr.name,
-            lastMessage: '대화 기록이 없습니다.',
-            lastMessageTime: '',
-            timestamp: 0 
+      teamRooms.forEach(tr => {
+        const mapKey = `team_${tr.id}`;
+        if (!roomMap.has(mapKey)) {
+          roomMap.set(mapKey, {
+             type: 'team', id: tr.id.toString(), name: `🎸 ${tr.name}`, image_url: tr.image_url,
+             lastMessage: '팀이 생성되었습니다. 첫 인사를 나눠보세요!', lastMessageTime: '', timestamp: 0
           });
         }
       });
@@ -169,7 +172,6 @@ export default function ChatPage() {
       if (!session?.user) return;
       setCurrentUser(session.user);
 
-      // 🌟 데이터 불러올 때 generation(기수) 필드 추가
       const { data: usersData } = await supabase.from('profiles').select('id, name, profile_image_url, session, generation').order('name');
       let loadedProfiles: Profile[] = [];
       if (usersData) {
@@ -198,19 +200,30 @@ export default function ChatPage() {
     setIsLoading(true);
 
     const fetchMessages = async () => {
-      // 🌟 메시지 불러올 때 작성자의 generation(기수) 정보 추가
-      const { data } = await supabase.from('chat_messages').select('*, profiles(name, profile_image_url, generation)').eq('room_id', activeRoom.id).order('created_at', { ascending: true });
+      const { data } = await supabase.from('chat_messages')
+        .select('*, profiles(name, profile_image_url, generation)')
+        .eq('room_id', activeRoom.id)
+        .eq('room_type', activeRoom.type)
+        .order('created_at', { ascending: true });
+      
       setMessages(data || []); setIsLoading(false); setTimeout(scrollToBottom, 100);
     };
     fetchMessages();
 
-    const channel = supabase.channel(`room_${activeRoom.id}`)
+    const channel = supabase.channel(`room_${activeRoom.type}_${activeRoom.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages', filter: `room_id=eq.${activeRoom.id}` }, async (payload) => {
+          
+          // 🌟 TypeScript 에러 해결: as any를 사용하여 타입 체킹 우회
+          const newRecord = payload.new as any;
+          const oldRecord = payload.old as any;
+
+          if (newRecord && newRecord.room_type && newRecord.room_type !== activeRoom.type) return;
+
           if (payload.eventType === 'INSERT') {
-            const { data: msgData } = await supabase.from('chat_messages').select('*, profiles(name, profile_image_url, generation)').eq('id', payload.new.id).single();
+            const { data: msgData } = await supabase.from('chat_messages').select('*, profiles(name, profile_image_url, generation)').eq('id', newRecord.id).single();
             if (msgData) { setMessages((prev) => [...prev, msgData]); setTimeout(scrollToBottom, 100); }
           } else if (payload.eventType === 'DELETE') {
-            setMessages((prev) => prev.filter(m => m.id !== payload.old.id));
+            setMessages((prev) => prev.filter(m => m.id !== oldRecord.id));
           }
       }).subscribe();
 
@@ -229,7 +242,7 @@ export default function ChatPage() {
       const targetUserId = activeRoom.id.split('_').find((id: string) => id !== currentUser.id);
       
       const { data: senderProfile } = await supabase.from('profiles').select('name, generation').eq('id', currentUser.id).single();
-      const senderName = formatNameWithGen(senderProfile?.name || '새로운 메시지', senderProfile?.generation); // 🌟 푸시 알림 발송 시에도 기수 포함
+      const senderName = formatNameWithGen(senderProfile?.name || '새로운 메시지', senderProfile?.generation);
 
       if (targetUserId) {
         try {
@@ -297,14 +310,24 @@ export default function ChatPage() {
   };
 
   const openRoomInfo = async () => {
-    if (activeRoom.type !== 'custom') return;
-    // 🌟 단체방 멤버 정보 불러올 때 generation(기수) 정보 추가
-    const { data } = await supabase.from('custom_chat_members').select('profiles(id, name, profile_image_url, generation)').eq('room_id', activeRoom.id);
-    if (data) setRoomMembers(data.map((d: any) => d.profiles));
-    setIsRoomInfoOpen(true);
+    if (activeRoom.type === 'custom') {
+      const { data } = await supabase.from('custom_chat_members').select('profiles(id, name, profile_image_url, generation)').eq('room_id', activeRoom.id);
+      if (data) setRoomMembers(data.map((d: any) => d.profiles));
+      setIsRoomInfoOpen(true);
+    } else if (activeRoom.type === 'team') {
+      const { data } = await supabase.from('team_members').select('profiles(id, name, profile_image_url, generation)').eq('team_id', activeRoom.id);
+      if (data) setRoomMembers(data.map((d: any) => d.profiles));
+      setIsRoomInfoOpen(true);
+    }
   };
 
   const handleLeaveRoom = async () => {
+    if (activeRoom.type === 'team') {
+      alert('팀 채팅방은 [팀 목록] 메뉴에서 팀을 나가야 자동으로 퇴장됩니다.');
+      setIsRoomInfoOpen(false);
+      return;
+    }
+
     if (!confirm("정말 이 단체방에서 나가시겠습니까?")) return;
     
     await supabase.from('custom_chat_members').delete().eq('room_id', activeRoom.id).eq('user_id', currentUser.id);
@@ -347,7 +370,8 @@ export default function ChatPage() {
     const term = searchTerm.toLowerCase();
     return room.name.toLowerCase().includes(term) || room.lastMessage.toLowerCase().includes(term);
   }).sort((a, b) => {
-    const aFav = favorites.includes(a.id); const bFav = favorites.includes(b.id);
+    const aFav = favorites.includes(`${a.type}_${a.id}`); 
+    const bFav = favorites.includes(`${b.type}_${b.id}`);
     if (aFav && !bFav) return -1; if (!aFav && bFav) return 1;
     return b.timestamp - a.timestamp;
   });
@@ -398,23 +422,27 @@ export default function ChatPage() {
                 </div>
               ) : (
                 filteredChatRooms.map(room => {
-                  const isFav = favorites.includes(room.id); 
+                  const roomKey = `${room.type}_${room.id}`;
+                  const isFav = favorites.includes(roomKey); 
                   return (
-                    <button key={room.id} onClick={() => changeRoom({ type: room.type, id: room.id, name: room.name })} className={`w-full flex items-center gap-3 p-3 rounded-xl transition group ${activeRoom.id === room.id ? 'bg-primary/10 border border-primary/20' : 'hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent text-text-base'}`}>
+                    <button key={roomKey} onClick={() => changeRoom({ type: room.type, id: room.id, name: room.name })} className={`w-full flex items-center gap-3 p-3 rounded-xl transition group ${activeRoom.id === room.id && activeRoom.type === room.type ? 'bg-primary/10 border border-primary/20' : 'hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent text-text-base'}`}>
                       <div className="w-11 h-11 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden border border-border-base shrink-0">
-                        {room.type === 'custom' ? <Users className="w-5 h-5 text-slate-500" /> : 
-                          (room.image_url ? <img src={room.image_url} className="w-full h-full object-cover" /> : <UserIcon className="w-5 h-5 text-slate-500" />)}
+                        {room.type === 'custom' || room.type === 'team' ? (
+                          room.image_url ? <img src={room.image_url} className="w-full h-full object-cover" /> : <Users className="w-5 h-5 text-slate-500" />
+                        ) : (
+                          room.image_url ? <img src={room.image_url} className="w-full h-full object-cover" /> : <UserIcon className="w-5 h-5 text-slate-500" />
+                        )}
                       </div>
                       
                       <div className="text-left flex-1 min-w-0 pr-2">
                         <div className="flex justify-between items-center mb-0.5">
-                          <div className={`text-sm font-bold truncate ${activeRoom.id === room.id ? 'text-primary' : 'text-text-base'}`}>{room.name}</div>
+                          <div className={`text-sm font-bold truncate ${activeRoom.id === room.id && activeRoom.type === room.type ? 'text-primary' : 'text-text-base'}`}>{room.name}</div>
                           <div className="text-[10px] text-text-muted shrink-0 ml-2">{room.lastMessageTime}</div>
                         </div>
                         <div className="text-xs text-text-muted truncate font-medium">{room.lastMessage}</div>
                       </div>
 
-                      <div onClick={(e) => toggleFavorite(e, room.id)} className={`p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition absolute right-2 ${isFav ? 'text-amber-400' : 'text-slate-300 dark:text-slate-600 opacity-0 group-hover:opacity-100'}`}>
+                      <div onClick={(e) => toggleFavorite(e, roomKey)} className={`p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition absolute right-2 ${isFav ? 'text-amber-400' : 'text-slate-300 dark:text-slate-600 opacity-0 group-hover:opacity-100'}`}>
                         <Star className="w-4 h-4" fill={isFav ? "currentColor" : "none"} />
                       </div>
                     </button>
@@ -435,7 +463,7 @@ export default function ChatPage() {
               {activeRoom.name}
             </h2>
           </div>
-          {activeRoom.type === 'custom' && (
+          {(activeRoom.type === 'custom' || activeRoom.type === 'team') && (
             <button onClick={openRoomInfo} className="p-2 text-text-muted hover:text-primary transition bg-slate-100 dark:bg-slate-800 rounded-full"><Info className="w-5 h-5" /></button>
           )}
         </header>
@@ -458,7 +486,6 @@ export default function ChatPage() {
                     </div>
                   )}
                   <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                    {/* 🌟 메시지 보낸 사람의 이름 옆에 기수 표시 */}
                     {!isMe && showProfile && <span className="text-xs text-text-muted mb-1 ml-1">{formatNameWithGen(msg.profiles?.name, msg.profiles?.generation)}</span>}
                     <div className="flex items-end gap-1.5">
                       {isMe && <span className="text-[10px] text-text-muted mb-1">{formatTime(msg.created_at)}</span>}
@@ -526,7 +553,6 @@ export default function ChatPage() {
                     <button key={user.id} onClick={() => { setIsNewDirectModalOpen(false); changeRoom({ type: 'direct', id: dmRoomId, name: user.name }); }} className="w-full flex items-center gap-3 p-2 hover:bg-bg-surface rounded-lg cursor-pointer transition">
                       <div className="w-8 h-8 rounded-full bg-slate-200 overflow-hidden shrink-0">{user.profile_image_url ? <img src={user.profile_image_url} className="w-full h-full object-cover" /> : <UserIcon className="w-4 h-4 text-slate-500" />}</div>
                       <div className="text-left">
-                        {/* 🌟 1:1 대화 상대방 검색 시 이름에 기수 표시 */}
                         <div className="text-sm font-bold text-text-base">{formatNameWithGen(user.name, user.generation)}</div>
                         <div className="text-[10px] text-text-muted">{user.session || '세션 미정'}</div>
                       </div>
@@ -572,7 +598,6 @@ export default function ChatPage() {
                 {roomMembers.map(member => (
                   <div key={member.id} className="flex items-center gap-3 p-2 bg-bg-base rounded-xl border border-border-base">
                     <div className="w-8 h-8 rounded-full bg-slate-200 overflow-hidden">{member.profile_image_url ? <img src={member.profile_image_url} className="w-full h-full object-cover"/> : <UserIcon className="w-4 h-4 text-slate-500 m-2"/>}</div>
-                    {/* 🌟 단체방 참여자 목록에 기수 표시 */}
                     <span className="font-medium text-sm text-text-base">{formatNameWithGen(member.name, member.generation)} {member.id === currentUser?.id && '(나)'}</span>
                   </div>
                 ))}
@@ -615,7 +640,6 @@ export default function ChatPage() {
                       <label key={user.id} className="flex items-center gap-3 p-2 hover:bg-bg-surface rounded-lg cursor-pointer">
                         <input type="checkbox" checked={selectedUsers.includes(user.id)} onChange={(e) => { e.target.checked ? setSelectedUsers([...selectedUsers, user.id]) : setSelectedUsers(selectedUsers.filter(id => id !== user.id)); }} className="w-4 h-4 accent-primary" />
                         <div className="w-8 h-8 rounded-full bg-slate-200 overflow-hidden shrink-0">{user.profile_image_url ? <img src={user.profile_image_url} className="w-full h-full object-cover" /> : <UserIcon className="w-4 h-4 text-slate-500" />}</div>
-                        {/* 🌟 단체방 초대 목록 검색 시 이름에 기수 표시 */}
                         <span className="text-sm font-medium">{formatNameWithGen(user.name, user.generation)}</span>
                       </label>
                     ))}
