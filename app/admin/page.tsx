@@ -291,7 +291,6 @@ export default function AdminPage() {
     } catch (err: any) { alert('방 삭제 중 오류가 발생했습니다: ' + err.message); }
   };
 
-  // 🌟 [보안 업데이트] 개별 등록 시 Authorization 헤더에 토큰 포함
   const handleManualRegister = async () => {
     if (!newName || !newStudentId || !newPhone) return alert('이름, 학번, 전화번호를 모두 입력해주세요.');
     if (newPhone.length < 6) return alert('비밀번호로 사용될 전화번호는 6자리 이상이어야 합니다.');
@@ -300,7 +299,6 @@ export default function AdminPage() {
     const pseudoEmail = `${newStudentId}@bandon.com`;
 
     try {
-      // 🌟 현재 세션에서 인증 토큰(출입증) 꺼내오기
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
@@ -308,7 +306,7 @@ export default function AdminPage() {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` // 🌟 토큰을 헤더에 담아서 API로 전송!
+          'Authorization': `Bearer ${token}` 
         },
         body: JSON.stringify({ email: pseudoEmail, password: newPhone })
       });
@@ -333,13 +331,13 @@ export default function AdminPage() {
     } finally { setIsSubmitting(false); }
   };
 
-  // 🌟 [보안 업데이트] 일괄 등록 시 Authorization 헤더에 토큰 포함
+  // 🌟 [스마트 업데이트] 헤더 자동 인식 기능이 추가된 일괄 등록 함수
   const handleBatchUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
     
-    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
-      alert('엑셀(.xlsx, .xls) 형식의 파일만 업로드 가능합니다.');
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls') && !file.name.endsWith('.csv')) {
+      alert('엑셀(.xlsx, .xls) 또는 CSV 형식의 파일만 업로드 가능합니다.');
       return;
     }
 
@@ -355,30 +353,60 @@ export default function AdminPage() {
         const workbook = XLSX.read(data, { type: 'array' });
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
-        const parsedData = XLSX.utils.sheet_to_json(worksheet) as any[];
+        
+        // 🌟 1. 일단 시트 전체를 2차원 배열 형태로 읽어옵니다.
+        const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+        
+        let headerRowIndex = -1;
+        
+        // 🌟 2. 위에서부터 한 줄씩 스캔하면서 '성명'(또는 이름), '학번' 등이 포함된 줄을 찾습니다.
+        for (let i = 0; i < rawData.length; i++) {
+          const row = rawData[i];
+          if (!row || !Array.isArray(row)) continue;
+          
+          // 공백을 다 지우고 글자만 붙여서 검사합니다.
+          const rowString = row.join('').replace(/\s+/g, '');
+          if (rowString.includes('성명') || rowString.includes('이름') || rowString.includes('학번')) {
+            headerRowIndex = i;
+            break;
+          }
+        }
+
+        // 헤더를 도저히 못 찾은 경우 튕겨냅니다.
+        if (headerRowIndex === -1) {
+          alert('엑셀 파일에서 [성명/이름], [학번] 등의 필수 항목 제목을 찾을 수 없습니다.\n양식을 다시 확인해주세요.');
+          setUploadProgress({ current: 0, total: 0, isUploading: false });
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          return;
+        }
+
+        // 🌟 3. 시스템이 찾아낸 헤더 줄(headerRowIndex)을 기준으로 데이터를 예쁘게 추출합니다.
+        const parsedData = XLSX.utils.sheet_to_json(worksheet, { range: headerRowIndex }) as any[];
         
         if (parsedData.length === 0) {
-          alert('올바른 데이터를 찾을 수 없습니다. 엑셀 양식을 확인해주세요.');
+          alert('등록할 부원 데이터가 없습니다.');
           return;
         }
 
         setUploadProgress({ current: 0, total: parsedData.length, isUploading: true });
         let successCount = 0; let failCount = 0;
 
-        // 🌟 현재 세션에서 인증 토큰 꺼내기
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
 
         for (let i = 0; i < parsedData.length; i++) {
           const row = parsedData[i];
-          const name = String(row['성명'] || '').trim();
-          const college = String(row['단대'] || '').trim();
-          const major = String(row['학과(부)'] || '').trim();
+          
+          // 🌟 4. '성명'이라고 적든 '이름'이라고 적든 알아서 다 호환되도록 가져옵니다.
+          const name = String(row['성명'] || row['이름'] || '').trim();
+          const college = String(row['단대'] || row['단과대학'] || '').trim();
+          const major = String(row['학과(부)'] || row['학과'] || row['전공'] || '').trim();
           const studentId = String(row['학번'] || '').trim();
           const grade = String(row['학년'] || '').trim();
-          const phone = String(row['연락처'] || '').replace(/-/g, '').trim(); 
-          const enrollmentStatus = String(row['재학/휴학'] || '재학').trim(); 
+          const phone = String(row['연락처'] || row['전화번호'] || row['핸드폰'] || '').replace(/-/g, '').trim(); 
+          const enrollmentStatus = String(row['재학/휴학'] || row['상태'] || '재학').trim(); 
 
+          // 이름, 학번, 연락처 세 가지가 없으면 불량 데이터로 간주하고 패스
           if (!name || !studentId || !phone) { failCount++; continue; }
           const pseudoEmail = `${studentId}@bandon.com`;
           
@@ -387,7 +415,7 @@ export default function AdminPage() {
               method: 'POST',
               headers: { 
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}` // 🌟 토큰 담아서 전송
+                'Authorization': `Bearer ${token}` 
               },
               body: JSON.stringify({ email: pseudoEmail, password: phone })
             });
@@ -406,8 +434,14 @@ export default function AdminPage() {
           setUploadProgress(prev => ({ ...prev, current: prev.current + 1 }));
         }
         alert(`일괄 등록이 완료되었습니다!\n✅ 성공: ${successCount}명\n❌ 실패/중복: ${failCount}명`);
-      } catch (err) { alert('파일을 읽는 중 오류가 발생했습니다. 파일이 손상되었거나 올바른 엑셀이 아닙니다.'); } 
-      finally { setUploadProgress({ current: 0, total: 0, isUploading: false }); if (fileInputRef.current) fileInputRef.current.value = ''; setIsBatchOpen(false); fetchData(); }
+      } catch (err) { 
+        alert('파일을 읽는 중 오류가 발생했습니다. 파일이 손상되었거나 올바른 엑셀이 아닙니다.'); 
+      } finally { 
+        setUploadProgress({ current: 0, total: 0, isUploading: false }); 
+        if (fileInputRef.current) fileInputRef.current.value = ''; 
+        setIsBatchOpen(false); 
+        fetchData(); 
+      }
     };
     reader.readAsArrayBuffer(file);
   };
@@ -1125,7 +1159,7 @@ export default function AdminPage() {
                     <UploadCloud className="w-8 h-8 text-text-muted mx-auto mb-2" />
                     <p className="text-sm font-bold text-text-base">2단계: 완성된 엑셀 파일 업로드</p>
                     <p className="text-xs text-text-muted mt-1">클릭하여 .xlsx 파일을 선택하면 자동으로 등록이 시작됩니다.</p>
-                    <input type="file" accept=".xlsx, .xls" className="hidden" ref={fileInputRef} onChange={handleBatchUpload} />
+                    <input type="file" accept=".xlsx, .xls, .csv" className="hidden" ref={fileInputRef} onChange={handleBatchUpload} />
                   </div>
                 </div>
               </Dialog.Panel>
