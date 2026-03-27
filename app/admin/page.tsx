@@ -293,7 +293,10 @@ export default function AdminPage() {
 
   const handleManualRegister = async () => {
     if (!newName || !newStudentId || !newPhone) return alert('이름, 학번, 전화번호를 모두 입력해주세요.');
-    if (newPhone.length < 6) return alert('비밀번호로 사용될 전화번호는 6자리 이상이어야 합니다.');
+    
+    // 🌟 수동 등록에서도 전화번호의 숫자만 필터링하도록 수정
+    const cleanPhone = newPhone.replace(/[^0-9]/g, '');
+    if (cleanPhone.length < 6) return alert('비밀번호로 사용될 전화번호는 숫자 6자리 이상이어야 합니다.');
     
     setIsSubmitting(true);
     const pseudoEmail = `${newStudentId}@bandon.com`;
@@ -308,7 +311,7 @@ export default function AdminPage() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}` 
         },
-        body: JSON.stringify({ email: pseudoEmail, password: newPhone })
+        body: JSON.stringify({ email: pseudoEmail, password: cleanPhone })
       });
       const data = await res.json();
 
@@ -320,10 +323,10 @@ export default function AdminPage() {
 
       if (data.user) {
         const { error: profileError } = await supabase.from('profiles').upsert({
-          id: data.user.id, name: newName, student_id: newStudentId, phone: newPhone, role: newRole, session: '미정', can_reserve: true, can_post: true, enrollment_status: '재학'
+          id: data.user.id, name: newName, student_id: newStudentId, phone: cleanPhone, role: newRole, session: '미정', can_reserve: true, can_post: true, enrollment_status: '재학'
         });
         if (profileError) throw profileError;
-        alert(`[${newName}] 부원이 명단에 성공적으로 추가되었습니다!\n\n아이디: ${newStudentId}\n초기 비밀번호: ${newPhone}`);
+        alert(`[${newName}] 부원이 명단에 성공적으로 추가되었습니다!\n\n아이디: ${newStudentId}\n초기 비밀번호: ${cleanPhone}`);
         setIsAddMemberModalOpen(false); setNewName(''); setNewStudentId(''); setNewPhone(''); setNewRole('member'); fetchData(); 
       }
     } catch (err: any) {
@@ -331,7 +334,6 @@ export default function AdminPage() {
     } finally { setIsSubmitting(false); }
   };
 
-  // 🌟 [스마트 업데이트] 헤더 자동 인식 기능이 추가된 일괄 등록 함수
   const handleBatchUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
@@ -354,17 +356,13 @@ export default function AdminPage() {
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
         
-        // 🌟 1. 일단 시트 전체를 2차원 배열 형태로 읽어옵니다.
         const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
-        
         let headerRowIndex = -1;
         
-        // 🌟 2. 위에서부터 한 줄씩 스캔하면서 '성명'(또는 이름), '학번' 등이 포함된 줄을 찾습니다.
         for (let i = 0; i < rawData.length; i++) {
           const row = rawData[i];
           if (!row || !Array.isArray(row)) continue;
           
-          // 공백을 다 지우고 글자만 붙여서 검사합니다.
           const rowString = row.join('').replace(/\s+/g, '');
           if (rowString.includes('성명') || rowString.includes('이름') || rowString.includes('학번')) {
             headerRowIndex = i;
@@ -372,7 +370,6 @@ export default function AdminPage() {
           }
         }
 
-        // 헤더를 도저히 못 찾은 경우 튕겨냅니다.
         if (headerRowIndex === -1) {
           alert('엑셀 파일에서 [성명/이름], [학번] 등의 필수 항목 제목을 찾을 수 없습니다.\n양식을 다시 확인해주세요.');
           setUploadProgress({ current: 0, total: 0, isUploading: false });
@@ -380,7 +377,6 @@ export default function AdminPage() {
           return;
         }
 
-        // 🌟 3. 시스템이 찾아낸 헤더 줄(headerRowIndex)을 기준으로 데이터를 예쁘게 추출합니다.
         const parsedData = XLSX.utils.sheet_to_json(worksheet, { range: headerRowIndex }) as any[];
         
         if (parsedData.length === 0) {
@@ -397,16 +393,24 @@ export default function AdminPage() {
         for (let i = 0; i < parsedData.length; i++) {
           const row = parsedData[i];
           
-          // 🌟 4. '성명'이라고 적든 '이름'이라고 적든 알아서 다 호환되도록 가져옵니다.
           const name = String(row['성명'] || row['이름'] || '').trim();
           const college = String(row['단대'] || row['단과대학'] || '').trim();
           const major = String(row['학과(부)'] || row['학과'] || row['전공'] || '').trim();
           const studentId = String(row['학번'] || '').trim();
           const grade = String(row['학년'] || '').trim();
-          const phone = String(row['연락처'] || row['전화번호'] || row['핸드폰'] || '').replace(/-/g, '').trim(); 
+          
+          // 🌟 전화번호 추출 시 하이픈(-) 및 공백 등 숫자 외 모든 문자 강제 제거
+          const rawPhone = String(row['연락처'] || row['전화번호'] || row['핸드폰'] || '').trim();
+          const phone = rawPhone.replace(/[^0-9]/g, ''); 
+          
           const enrollmentStatus = String(row['재학/휴학'] || row['상태'] || '재학').trim(); 
 
-          // 이름, 학번, 연락처 세 가지가 없으면 불량 데이터로 간주하고 패스
+          // 직책에 '회장'이 있으면 자동으로 권한을 president로 부여
+          const roleString = String(row['직책'] || '').trim();
+          let assignRole = 'member';
+          if (roleString.includes('회장')) assignRole = 'president';
+          else if (roleString.includes('부회장') || roleString.includes('관리자') || roleString.includes('임원')) assignRole = 'admin';
+
           if (!name || !studentId || !phone) { failCount++; continue; }
           const pseudoEmail = `${studentId}@bandon.com`;
           
@@ -425,7 +429,7 @@ export default function AdminPage() {
 
             if (resData.user) {
               const { error: profileError } = await supabase.from('profiles').upsert({
-                id: resData.user.id, name: name, student_id: studentId, phone: phone, college: college, major: major, grade: grade, enrollment_status: enrollmentStatus, role: 'member', session: '미정', can_reserve: true, can_post: true
+                id: resData.user.id, name: name, student_id: studentId, phone: phone, college: college, major: major, grade: grade, enrollment_status: enrollmentStatus, role: assignRole, session: '미정', can_reserve: true, can_post: true
               });
               if (profileError) throw profileError;
               successCount++;
@@ -446,23 +450,61 @@ export default function AdminPage() {
     reader.readAsArrayBuffer(file);
   };
 
+  // 🌟 [빈 명부 다운로드] 양식 형태 요청하신 구조로 완벽히 수정
   const downloadTemplate = () => {
-    const ws_data = [ ['성명', '단대', '학과(부)', '학번', '학년', '연락처', '재학/휴학'], ['홍길동', '공과대학', '컴퓨터공학부', '20240001', '3', '01012345678', '재학'] ];
+    const ws_data = [ 
+      [`${new Date().getFullYear()}년도 동아리 회원명부(재학생)`], 
+      ['직책', '성명', '단대', '학과(부)', '학번', '학년', '연락처'], 
+      ['회장', '박지민', 'IT대학', '전자정보공학부', '20231510', '3', '010-3714-6713'],
+      ['', '홍길동', '공과대학', '컴퓨터공학부', '20240001', '2', '010-1234-5678'] 
+    ];
     const ws = XLSX.utils.aoa_to_sheet(ws_data);
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }]; // 첫 줄 병합
+    
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "회원등록양식");
-    ws['!cols'] = [{ wch: 10 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 8 }, { wch: 15 }, { wch: 12 }];
+    ws['!cols'] = [{ wch: 8 }, { wch: 10 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 8 }, { wch: 15 }];
     XLSX.writeFile(wb, `동아리_부원일괄등록_양식.xlsx`);
   };
 
+  // 🌟 [엑셀 다운로드] 회장 우선 정렬 및 직책('회장') 필터링 처리 반영
   const exportToExcel = () => {
-    const headers = ['성명', '단대', '학과(부)', '학번', '학년', '재학/휴학', '연락처', '등급', '소속 팀', '주 세션'];
-    const rows = profiles.map(p => [ p.name, p.college || '', p.major || '', p.student_id, p.grade || '', p.enrollment_status || '재학', p.phone || '', p.role === 'president' ? '회장' : p.role === 'admin' ? '관리자' : p.role === 'leader' ? '팀장' : '부원', p.team_names?.join(' / ') || '소속 없음', p.session || '미정' ]);
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    // 회장이 최상단에 오도록 정렬
+    const sortedProfiles = [...profiles].sort((a, b) => {
+      if (a.role === 'president' && b.role !== 'president') return -1;
+      if (a.role !== 'president' && b.role === 'president') return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    const rows = sortedProfiles.map(p => {
+      // 다운로드 시에는 보기 편하게 연락처에 하이픈을 자동 추가해줍니다.
+      let phoneDisplay = p.phone || '';
+      if (phoneDisplay.length === 11) phoneDisplay = phoneDisplay.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3');
+      else if (phoneDisplay.length === 10) phoneDisplay = phoneDisplay.replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3');
+
+      return [ 
+        p.role === 'president' ? '회장' : '', // 회장 직책인 사람만 표기, 나머지는 공백
+        p.name, 
+        p.college || '', 
+        p.major || '', 
+        p.student_id, 
+        p.grade || '', 
+        phoneDisplay 
+      ];
+    });
+
+    const ws_data = [
+      [`${new Date().getFullYear()}년도 동아리 회원명부`],
+      ['직책', '성명', '단대', '학과(부)', '학번', '학년', '연락처'],
+      ...rows
+    ];
+    
+    const ws = XLSX.utils.aoa_to_sheet(ws_data);
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }]; // 첫 줄 병합
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "부원명단");
-    ws['!cols'] = [{ wch: 10 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 8 }, { wch: 10 }, { wch: 15 }, { wch: 8 }, { wch: 25 }, { wch: 15 }];
-    XLSX.writeFile(wb, `동아리_부원명단_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, "회원명부");
+    ws['!cols'] = [{ wch: 8 }, { wch: 10 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 8 }, { wch: 15 }];
+    XLSX.writeFile(wb, `동아리_회원명부_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const togglePermission = async (userId: string, field: 'can_reserve' | 'can_post', currentValue: boolean) => {

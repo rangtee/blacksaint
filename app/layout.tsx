@@ -30,8 +30,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const [userProfile, setUserProfile] = useState<any>(null);
   const [userTeams, setUserTeams] = useState<any[]>([]);
   
-  // 🌟 모바일 사이드바 메뉴 열림/닫힘 상태
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // 🌟 [추가된 부분] 앱 실행 시 서비스 워커(백그라운드 푸시 알림) 1회 등록
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js')
+        .then((registration) => console.log('Service Worker 등록 완료:', registration.scope))
+        .catch((error) => console.error('Service Worker 등록 실패:', error));
+    }
+  }, []);
 
   useEffect(() => {
     const savedColor = localStorage.getItem('theme-primary');
@@ -68,7 +76,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     };
   }, [pathname, userProfile?.id]);
 
-  // 🌟 페이지 이동 시 모바일 메뉴 자동 닫기
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [pathname]);
@@ -130,7 +137,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${inter.className} flex h-full overflow-hidden transition-colors duration-300`}>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
           
-          {/* PC 사이드바 */}
           <aside className="hidden md:flex w-64 shrink-0 bg-bg-surface border-r border-border-base p-6 flex-col h-full z-20 transition-colors duration-300">
             <div onClick={() => router.push('/')} className="cursor-pointer mb-8 group">
               <h1 className="text-3xl font-black text-primary mb-1 group-hover:brightness-110 transition flex items-center gap-2">
@@ -163,7 +169,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </nav>
           </aside>
 
-          {/* 🌟 모바일 사이드바 (햄버거 메뉴 오버레이) */}
           {isMobileMenuOpen && (
             <div className="md:hidden fixed inset-0 z-60 flex">
               <div className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setIsMobileMenuOpen(false)} />
@@ -240,7 +245,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               )}
             </header>
 
-            {/* 🌟 모바일 헤더: 햄버거 메뉴 아이콘 추가됨 */}
             <header className="md:hidden h-14 shrink-0 border-b border-border-base flex items-center justify-between px-4 bg-bg-surface/80 backdrop-blur-md z-40 sticky top-0 transition-colors duration-300">
                 <div className="flex items-center gap-3">
                   <button onClick={() => setIsMobileMenuOpen(true)} className="p-1.5 -ml-1 text-text-base hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition">
@@ -262,7 +266,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               {children}
             </main>
 
-            {/* 🌟 모바일 하단 메뉴: 가장 중요한 5개 메뉴만 남겨서 넓고 쾌적하게! */}
             <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-bg-surface/95 backdrop-blur-md border-t border-border-base z-50 flex items-center justify-between px-2 pb-safe transition-colors duration-300">
               <Link href="/" className={`flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors ${pathname === '/' ? 'text-primary' : 'text-text-muted hover:text-text-base'}`}>
                 <Home className={`w-5 h-5 ${pathname === '/' ? 'fill-current' : ''}`} />
