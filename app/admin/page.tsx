@@ -24,7 +24,6 @@ export default function AdminPage() {
   const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false);
   const [isBatchOpen, setIsBatchOpen] = useState(false);
   
-  // 🌟 회원 정보 수정 모달 상태
   const [isEditMemberModalOpen, setIsEditMemberModalOpen] = useState(false);
   const [editProfile, setEditProfile] = useState<Partial<Profile> | null>(null);
 
@@ -217,11 +216,9 @@ export default function AdminPage() {
     fetchAccounting();
   };
 
-  // 🌟 [오류 수정됨] team_songs 테이블에서 곡 정보를 조인해서 가져오도록 쿼리 수정
   const exportFolderDataToExcel = async (folderId: number, folderName: string) => {
     try {
       setIsLoading(true);
-      // setlist 컬럼 대신, team_songs 테이블을 조인해서 가져옵니다.
       const { data: teamsData, error: teamsError } = await supabase
         .from('teams')
         .select(`
@@ -250,7 +247,6 @@ export default function AdminPage() {
         } else {
           const formatDuration = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
           
-          // 첫 번째 곡 데이터 (팀 이름, 구성원, 총 시간 포함)
           rows.push([
             team.name, 
             membersString, 
@@ -260,7 +256,6 @@ export default function AdminPage() {
             totalTeamTimeMinutes
           ]);
           
-          // 두 번째 곡부터는 빈칸으로 처리하여 깔끔하게 정리
           for (let i = 1; i < songs.length; i++) {
             rows.push([
               '', 
@@ -278,9 +273,7 @@ export default function AdminPage() {
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, folderName.substring(0, 31));
       
-      // 열 너비 조절
       ws['!cols'] = [{ wch: 20 }, { wch: 40 }, { wch: 30 }, { wch: 20 }, { wch: 10 }, { wch: 20 }];
-      
       XLSX.writeFile(wb, `동아리_공연팀목록_${folderName}.xlsx`);
     } catch (error: any) { 
       alert('엑셀 파일 생성 중 오류가 발생했습니다: ' + error.message); 
@@ -298,6 +291,7 @@ export default function AdminPage() {
     } catch (err: any) { alert('방 삭제 중 오류가 발생했습니다: ' + err.message); }
   };
 
+  // 🌟 [보안 업데이트] 개별 등록 시 Authorization 헤더에 토큰 포함
   const handleManualRegister = async () => {
     if (!newName || !newStudentId || !newPhone) return alert('이름, 학번, 전화번호를 모두 입력해주세요.');
     if (newPhone.length < 6) return alert('비밀번호로 사용될 전화번호는 6자리 이상이어야 합니다.');
@@ -306,9 +300,16 @@ export default function AdminPage() {
     const pseudoEmail = `${newStudentId}@bandon.com`;
 
     try {
+      // 🌟 현재 세션에서 인증 토큰(출입증) 꺼내오기
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
       const res = await fetch('/api/create-user', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` // 🌟 토큰을 헤더에 담아서 API로 전송!
+        },
         body: JSON.stringify({ email: pseudoEmail, password: newPhone })
       });
       const data = await res.json();
@@ -332,6 +333,7 @@ export default function AdminPage() {
     } finally { setIsSubmitting(false); }
   };
 
+  // 🌟 [보안 업데이트] 일괄 등록 시 Authorization 헤더에 토큰 포함
   const handleBatchUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
@@ -363,6 +365,10 @@ export default function AdminPage() {
         setUploadProgress({ current: 0, total: parsedData.length, isUploading: true });
         let successCount = 0; let failCount = 0;
 
+        // 🌟 현재 세션에서 인증 토큰 꺼내기
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+
         for (let i = 0; i < parsedData.length; i++) {
           const row = parsedData[i];
           const name = String(row['성명'] || '').trim();
@@ -379,7 +385,10 @@ export default function AdminPage() {
           try {
             const res = await fetch('/api/create-user', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}` // 🌟 토큰 담아서 전송
+              },
               body: JSON.stringify({ email: pseudoEmail, password: phone })
             });
             const resData = await res.json();
@@ -436,7 +445,7 @@ export default function AdminPage() {
   };
 
   const handleDeleteMember = async (userId: string, userName: string) => {
-    if (!confirm(`🚨 경고: [${userName}] 부원을 정말 영구 삭제하시겠습니까?\n\n이 부원이 작성한 글, 댓글, 투표 기록 등 모든 데이터가 함께 삭제되며 복구할 수 없습니다.`)) return;
+    if (!confirm(`🚨 경고: [${userName}] 부원을 정말 영구 삭제하시겠습니까?\n\n이 부원이 작성한 글, 댓글, 투표 기록 등 모든 데이터가 함께 삭제되며 복구할 수 복원할 수 없습니다.`)) return;
     try {
       const { error } = await supabase.from('profiles').delete().eq('id', userId);
       if (error) throw error;
@@ -666,7 +675,6 @@ export default function AdminPage() {
                           </td>
                           <td className="p-4 text-center transition-colors">
                             <div className="flex gap-1 justify-center">
-                              {/* 🌟 (신규) 정보 수정 버튼 */}
                               <button onClick={() => handleOpenEditMember(profile)} className="p-2 text-text-muted hover:text-primary hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" title="정보 수정">
                                 <Edit2 className="w-4 h-4" />
                               </button>
@@ -865,7 +873,6 @@ export default function AdminPage() {
         </div>
       </main>
 
-      {/* 🌟 (신규) 회원 정보 수정 모달 */}
       <Transition appear show={isEditMemberModalOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={() => setIsEditMemberModalOpen(false)}>
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
