@@ -294,7 +294,6 @@ export default function AdminPage() {
   const handleManualRegister = async () => {
     if (!newName || !newStudentId || !newPhone) return alert('이름, 학번, 전화번호를 모두 입력해주세요.');
     
-    // 🌟 수동 등록에서도 전화번호의 숫자만 필터링하도록 수정
     const cleanPhone = newPhone.replace(/[^0-9]/g, '');
     if (cleanPhone.length < 6) return alert('비밀번호로 사용될 전화번호는 숫자 6자리 이상이어야 합니다.');
     
@@ -334,6 +333,7 @@ export default function AdminPage() {
     } finally { setIsSubmitting(false); }
   };
 
+  // 🌟 [핵심 업데이트] 이미 존재하는 회원은 '수정' 처리하고 튕기는 원인을 정확히 잡아내는 스마트 일괄 등록
   const handleBatchUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
@@ -385,7 +385,11 @@ export default function AdminPage() {
         }
 
         setUploadProgress({ current: 0, total: parsedData.length, isUploading: true });
-        let successCount = 0; let failCount = 0;
+        
+        let successCount = 0; 
+        let failCount = 0; 
+        let updateCount = 0;
+        let lastErrorMessage = ''; // 에러 원인 추적용
 
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
@@ -399,13 +403,11 @@ export default function AdminPage() {
           const studentId = String(row['학번'] || '').trim();
           const grade = String(row['학년'] || '').trim();
           
-          // 🌟 전화번호 추출 시 하이픈(-) 및 공백 등 숫자 외 모든 문자 강제 제거
           const rawPhone = String(row['연락처'] || row['전화번호'] || row['핸드폰'] || '').trim();
           const phone = rawPhone.replace(/[^0-9]/g, ''); 
           
           const enrollmentStatus = String(row['재학/휴학'] || row['상태'] || '재학').trim(); 
 
-          // 직책에 '회장'이 있으면 자동으로 권한을 president로 부여
           const roleString = String(row['직책'] || '').trim();
           let assignRole = 'member';
           if (roleString.includes('회장')) assignRole = 'president';
@@ -415,29 +417,69 @@ export default function AdminPage() {
           const pseudoEmail = `${studentId}@bandon.com`;
           
           try {
-            const res = await fetch('/api/create-user', {
-              method: 'POST',
-              headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}` 
-              },
-              body: JSON.stringify({ email: pseudoEmail, password: phone })
-            });
-            const resData = await res.json();
-            
-            if (!res.ok) { failCount++; continue; }
+            // 🌟 1. 이미 등록된 학번인지 프로필 테이블에서 확인
+            const { data: existingProfile } = await supabase
+              .from('profiles')
+              .select('id')
+              .eq('student_id', studentId)
+              .maybeSingle();
 
-            if (resData.user) {
-              const { error: profileError } = await supabase.from('profiles').upsert({
-                id: resData.user.id, name: name, student_id: studentId, phone: phone, college: college, major: major, grade: grade, enrollment_status: enrollmentStatus, role: assignRole, session: '미정', can_reserve: true, can_post: true
+            if (existingProfile) {
+              // 🌟 2. 이미 존재하는 회원이면 정보만 '업데이트(수정)' 하고 넘어감
+              const { error: updateError } = await supabase.from('profiles').update({
+                name, phone, college, major, grade, enrollment_status: enrollmentStatus, role: assignRole
+              }).eq('id', existingProfile.id);
+              
+              if (updateError) {
+                lastErrorMessage = `[${name}] 수정 에러: ` + updateError.message;
+                failCount++;
+              } else {
+                updateCount++;
+              }
+            } else {
+              // 🌟 3. 완전히 새로운 회원이면 신규 가입 API 호출
+              const res = await fetch('/api/create-user', {
+                method: 'POST',
+                headers: { 
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}` 
+                },
+                body: JSON.stringify({ email: pseudoEmail, password: phone })
               });
-              if (profileError) throw profileError;
-              successCount++;
+              const resData = await res.json();
+              
+              if (!res.ok) {
+                lastErrorMessage = `[${name}] 가입 에러: ` + (resData.error || '알 수 없는 에러');
+                failCount++; 
+                continue; 
+              }
+
+              if (resData.user) {
+                const { error: profileError } = await supabase.from('profiles').insert({
+                  id: resData.user.id, name, student_id: studentId, phone, college, major, grade, enrollment_status: enrollmentStatus, role: assignRole, session: '미정', can_reserve: true, can_post: true
+                });
+                
+                if (profileError) {
+                  lastErrorMessage = `[${name}] 프로필 에러: ` + profileError.message;
+                  failCount++;
+                } else {
+                  successCount++;
+                }
+              }
             }
-          } catch (err) { failCount++; }
+          } catch (err: any) { 
+            lastErrorMessage = `[${name}] 통신 에러: ` + (err.message || '알 수 없는 오류');
+            failCount++; 
+          }
           setUploadProgress(prev => ({ ...prev, current: prev.current + 1 }));
         }
-        alert(`일괄 등록이 완료되었습니다!\n✅ 성공: ${successCount}명\n❌ 실패/중복: ${failCount}명`);
+        
+        let resultMsg = `일괄 처리가 완료되었습니다!\n\n✅ 신규 가입 성공: ${successCount}명\n🔄 기존 회원 정보 갱신: ${updateCount}명\n❌ 실패: ${failCount}명`;
+        if (failCount > 0 && lastErrorMessage) {
+          resultMsg += `\n\n⚠️ 실패 원인(참고용): ${lastErrorMessage}\n(계정이 꼬인 경우 Supabase Authentication에서 삭제 후 다시 시도해보세요.)`;
+        }
+        alert(resultMsg);
+
       } catch (err) { 
         alert('파일을 읽는 중 오류가 발생했습니다. 파일이 손상되었거나 올바른 엑셀이 아닙니다.'); 
       } finally { 
@@ -450,7 +492,6 @@ export default function AdminPage() {
     reader.readAsArrayBuffer(file);
   };
 
-  // 🌟 [빈 명부 다운로드] 양식 형태 요청하신 구조로 완벽히 수정
   const downloadTemplate = () => {
     const ws_data = [ 
       [`${new Date().getFullYear()}년도 동아리 회원명부(재학생)`], 
@@ -459,7 +500,7 @@ export default function AdminPage() {
       ['', '홍길동', '공과대학', '컴퓨터공학부', '20240001', '2', '010-1234-5678'] 
     ];
     const ws = XLSX.utils.aoa_to_sheet(ws_data);
-    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }]; // 첫 줄 병합
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }]; 
     
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "회원등록양식");
@@ -467,9 +508,7 @@ export default function AdminPage() {
     XLSX.writeFile(wb, `동아리_부원일괄등록_양식.xlsx`);
   };
 
-  // 🌟 [엑셀 다운로드] 회장 우선 정렬 및 직책('회장') 필터링 처리 반영
   const exportToExcel = () => {
-    // 회장이 최상단에 오도록 정렬
     const sortedProfiles = [...profiles].sort((a, b) => {
       if (a.role === 'president' && b.role !== 'president') return -1;
       if (a.role !== 'president' && b.role === 'president') return 1;
@@ -477,13 +516,12 @@ export default function AdminPage() {
     });
 
     const rows = sortedProfiles.map(p => {
-      // 다운로드 시에는 보기 편하게 연락처에 하이픈을 자동 추가해줍니다.
       let phoneDisplay = p.phone || '';
       if (phoneDisplay.length === 11) phoneDisplay = phoneDisplay.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3');
       else if (phoneDisplay.length === 10) phoneDisplay = phoneDisplay.replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3');
 
       return [ 
-        p.role === 'president' ? '회장' : '', // 회장 직책인 사람만 표기, 나머지는 공백
+        p.role === 'president' ? '회장' : '', 
         p.name, 
         p.college || '', 
         p.major || '', 
@@ -500,7 +538,7 @@ export default function AdminPage() {
     ];
     
     const ws = XLSX.utils.aoa_to_sheet(ws_data);
-    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }]; // 첫 줄 병합
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }]; 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "회원명부");
     ws['!cols'] = [{ wch: 8 }, { wch: 10 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 8 }, { wch: 15 }];
@@ -1175,7 +1213,7 @@ export default function AdminPage() {
                 {uploadProgress.isUploading && (
                   <div className="absolute inset-0 bg-bg-surface/90 backdrop-blur-sm z-20 flex flex-col items-center justify-center">
                     <Loader2 className="w-10 h-10 text-primary animate-spin mb-4" />
-                    <p className="font-bold text-text-base">부원 계정 생성 중...</p>
+                    <p className="font-bold text-text-base">부원 계정 생성 및 수정 중...</p>
                     <p className="text-sm text-text-muted mt-2">{uploadProgress.current} / {uploadProgress.total} 완료</p>
                     <div className="w-48 h-2 bg-slate-200 dark:bg-slate-800 rounded-full mt-4 overflow-hidden">
                       <div className="h-full bg-primary transition-all duration-300" style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}></div>
