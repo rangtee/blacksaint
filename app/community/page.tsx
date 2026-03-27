@@ -4,6 +4,7 @@ import { MessageSquare, Plus, Search, User, Clock, Trash2, X, MessageCircle, Ima
 import { Dialog, Transition } from '@headlessui/react';
 import { supabase } from '../../lib/supabase';
 import dynamic from 'next/dynamic';
+import DOMPurify from 'dompurify'; // 🌟 XSS 방어용 소독(Sanitize) 라이브러리 추가
 
 interface BoardCategory { id: number; name: string; parent_id: number | null; is_admin_only: boolean; }
 interface Post { 
@@ -557,7 +558,6 @@ export default function CommunityPage() {
         <Dialog as="div" className="relative z-50" onClose={() => setIsDetailModalOpen(false)}>
           <div className="fixed inset-0 bg-black/60 dark:bg-black/80 backdrop-blur-sm transition-opacity" />
           <div className="fixed inset-0 flex items-center justify-center sm:p-4">
-            {/* 🌟 수정 포인트: Flexbox 구조로 완벽히 분리하여 입력창이 댓글을 가리지 않게 함 */}
             <Dialog.Panel className="w-full sm:max-w-2xl bg-bg-surface sm:rounded-3xl border border-border-base h-dvh sm:h-[85vh] flex flex-col shadow-2xl relative transition-colors overflow-hidden">
               
               {selectedPost && (<>
@@ -599,7 +599,10 @@ export default function CommunityPage() {
 
                 {/* 2. 스크롤 가능한 본문 및 댓글 영역 */}
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-5 lg:p-6 pb-6 relative">
-                  <div className="prose dark:prose-invert max-w-none text-slate-700 dark:text-slate-300 leading-relaxed mb-8 blog-content wrap-break-word overflow-x-hidden" dangerouslySetInnerHTML={{ __html: selectedPost.content }} />
+                  
+                  {/* 🌟 수정 포인트: dangerouslySetInnerHTML에 DOMPurify.sanitize() 적용하여 악성 스크립트 실행 방어 */}
+                  <div className="prose dark:prose-invert max-w-none text-slate-700 dark:text-slate-300 leading-relaxed mb-8 blog-content wrap-break-word overflow-x-hidden" 
+                       dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selectedPost.content) }} />
                   <style jsx global>{`.blog-content img { max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--border-color); margin: 16px auto; display: block; object-fit: contain; }`}</style>
                   
                   {currentPoll && (

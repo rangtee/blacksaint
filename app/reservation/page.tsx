@@ -60,6 +60,14 @@ export default function TimetablePage() {
     return `${h}:${m}`;
   };
 
+  const getHexWithOpacity = (hex: string, opacity: number) => {
+    const cleanHex = hex.replace('#', '');
+    const r = parseInt(cleanHex.substring(0, 2), 16);
+    const g = parseInt(cleanHex.substring(2, 4), 16);
+    const b = parseInt(cleanHex.substring(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+  };
+
   const fetchData = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     
@@ -153,6 +161,7 @@ export default function TimetablePage() {
     }
   };
 
+  // 🌟 핵심 보안 패치: 동시성 예약 에러(Race Condition)를 잡아내는 로직
   const handleReservation = async () => {
     if (!teamId || !date) return alert('팀과 날짜를 선택해주세요!');
     if (isRecurring && !recurringEndDate) return alert('정기 예약 종료 날짜를 선택해주세요!');
@@ -181,6 +190,7 @@ export default function TimetablePage() {
         series_id: series_id
       }));
 
+      // 1. 프론트엔드 단의 1차 검사 (화면의 즉각적인 반응을 위해 유지)
       const { data: existing } = await supabase.from('reservations').select('*').in('reservation_date', datesToBook);
       const overlap = existing?.some((res: any) => {
         const s = new Date(res.start_time).getHours() + new Date(res.start_time).getMinutes() / 60;
@@ -194,7 +204,20 @@ export default function TimetablePage() {
         return;
       }
 
-      await supabase.from('reservations').insert(payload);
+      // 2. DB로 예약 데이터 전송 (여기서 동시성 중복 발생 시 DB가 에러를 뿜음)
+      const { error } = await supabase.from('reservations').insert(payload);
+
+      // 3. DB 제약조건(Exclusion Constraint) 에러 캐치!
+      if (error) {
+        if (error.code === '23P01' || error.message.includes('prevent_overlapping_reservations')) {
+           alert('🚨 방금 전 다른 누군가가 간발의 차이로 해당 시간을 먼저 예약했습니다! 시간을 다시 선택해주세요.');
+        } else {
+           alert('예약 처리 중 오류가 발생했습니다: ' + error.message);
+        }
+        setIsSubmitting(false);
+        return;
+      }
+
       alert(`🎉 예약이 완료되었습니다! ${isRecurring ? `(총 ${datesToBook.length}건)` : ''}`);
       setIsOpen(false); fetchData();
       setTeamId(''); setIsRecurring(false); setRecurringEndDate('');
@@ -211,7 +234,7 @@ export default function TimetablePage() {
     start.setDate(currentViewDate.getDate() - day);
     
     const days = [];
-    const startMonth = start.getMonth(); // 🌟 이번 주의 시작(월요일) 월을 기준점으로 삼음
+    const startMonth = start.getMonth(); 
 
     for (let i = 0; i < 7; i++) {
       const d = new Date(start);
@@ -220,7 +243,6 @@ export default function TimetablePage() {
       
       let dateDisplay = d.getDate().toString();
       
-      // 🌟 시작일(월요일)과 월이 다르면 뒤에 달을 붙여서 "월.일" 포맷으로 표시
       if (d.getMonth() !== startMonth) {
         dateDisplay = `${d.getMonth() + 1}.${d.getDate()}`;
       }
@@ -310,8 +332,8 @@ export default function TimetablePage() {
                          height: `calc(${b.duration * 5}rem - 4px)`, 
                          marginLeft: '4px', 
                          marginTop: '2px',
-                         backgroundColor: b.teamColor, // 🌟 반투명 및 좌측 선 제거, 색상 완전 솔리드 채움
-                         color: '#ffffff', // 🌟 솔리드 컬러 배경 대비 흰색 글씨 고정
+                         backgroundColor: b.teamColor, 
+                         color: '#ffffff', 
                        }}>
                     <p className="text-xs sm:text-sm md:text-base font-black uppercase truncate leading-tight mb-0.5 drop-shadow-sm">{b.team}</p>
                     <p className="text-[10px] sm:text-xs font-semibold opacity-90 tracking-tight drop-shadow-sm">{formatTimeToString(b.start)} - {formatTimeToString(b.start+b.duration)}</p>
