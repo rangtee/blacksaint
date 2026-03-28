@@ -291,14 +291,18 @@ export default function AdminPage() {
     } catch (err: any) { alert('방 삭제 중 오류가 발생했습니다: ' + err.message); }
   };
 
+  // 🌟 [수동 등록 픽스] 학번에서 눈에 보이지 않는 유령 문자, 공백, 특수기호 완벽 제거
   const handleManualRegister = async () => {
     if (!newName || !newStudentId || !newPhone) return alert('이름, 학번, 전화번호를 모두 입력해주세요.');
     
     const cleanPhone = newPhone.replace(/[^0-9]/g, '');
-    if (cleanPhone.length < 6) return alert('비밀번호로 사용될 전화번호는 숫자 6자리 이상이어야 합니다.');
+    const cleanStudentId = newStudentId.replace(/[^a-zA-Z0-9]/g, ''); // 영문, 숫자만 남기고 전부 삭제!
     
+    if (cleanPhone.length < 6) return alert('비밀번호로 사용될 전화번호는 숫자 6자리 이상이어야 합니다.');
+    if (!cleanStudentId) return alert('유효한 학번을 입력해주세요.');
+
     setIsSubmitting(true);
-    const pseudoEmail = `${newStudentId}@bandon.com`;
+    const pseudoEmail = `${cleanStudentId}@bandon.com`;
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -322,10 +326,10 @@ export default function AdminPage() {
 
       if (data.user) {
         const { error: profileError } = await supabase.from('profiles').upsert({
-          id: data.user.id, name: newName, student_id: newStudentId, phone: cleanPhone, role: newRole, session: '미정', can_reserve: true, can_post: true, enrollment_status: '재학'
+          id: data.user.id, name: newName, student_id: cleanStudentId, phone: cleanPhone, role: newRole, session: '미정', can_reserve: true, can_post: true, enrollment_status: '재학'
         });
         if (profileError) throw profileError;
-        alert(`[${newName}] 부원이 명단에 성공적으로 추가되었습니다!\n\n아이디: ${newStudentId}\n초기 비밀번호: ${cleanPhone}`);
+        alert(`[${newName}] 부원이 명단에 성공적으로 추가되었습니다!\n\n아이디: ${cleanStudentId}\n초기 비밀번호: ${cleanPhone}`);
         setIsAddMemberModalOpen(false); setNewName(''); setNewStudentId(''); setNewPhone(''); setNewRole('member'); fetchData(); 
       }
     } catch (err: any) {
@@ -333,7 +337,7 @@ export default function AdminPage() {
     } finally { setIsSubmitting(false); }
   };
 
-  // 🌟 에러 상세 로깅 및 빈 줄 무시 로직 강화
+  // 🌟 [일괄 등록 픽스] 학번에서 눈에 보이지 않는 유령 문자, 공백, 특수기호 완벽 제거
   const handleBatchUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
@@ -398,11 +402,14 @@ export default function AdminPage() {
           const row = parsedData[i];
           
           const name = String(row['성명'] || row['이름'] || '').trim();
-          const studentId = String(row['학번'] || '').trim();
+          
+          // 🚨 핵심 수정 부분: 엑셀에서 들어온 학번의 투명 공백, 줄바꿈 등 유령 문자를 완벽하게 파괴합니다.
+          const rawStudentId = String(row['학번'] || '');
+          const studentId = rawStudentId.replace(/[^a-zA-Z0-9]/g, ''); 
+          
           const rawPhone = String(row['연락처'] || row['전화번호'] || row['핸드폰'] || '').trim();
           const phone = rawPhone.replace(/[^0-9]/g, ''); 
           
-          // 이름, 학번, 전화번호 중 하나라도 없으면 엑셀의 빈 줄(,,,,,,)이므로 그냥 무시하고 스킵! (실패 카운트 안 올림)
           if (!name || !studentId || !phone) { 
             continue; 
           }
@@ -458,7 +465,6 @@ export default function AdminPage() {
               const resData = await res.json();
               
               if (!res.ok) {
-                // 🌟 서버에서 온 에러 메시지를 undefined가 아닌 명확한 텍스트로 추출
                 let detailedError = '알 수 없는 서버 에러 (가입 차단됨)';
                 if (resData.error) detailedError = typeof resData.error === 'string' ? resData.error : JSON.stringify(resData.error);
                 else if (resData.message) detailedError = resData.message;
@@ -598,7 +604,7 @@ export default function AdminPage() {
     setIsSubmitting(true);
     const { error } = await supabase.from('profiles').update({
       name: editProfile.name,
-      student_id: editProfile.student_id,
+      student_id: editProfile.student_id.replace(/[^a-zA-Z0-9]/g, ''),
       phone: editProfile.phone,
       college: editProfile.college,
       major: editProfile.major,
