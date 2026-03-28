@@ -333,7 +333,7 @@ export default function AdminPage() {
     } finally { setIsSubmitting(false); }
   };
 
-  // 🌟 [핵심 로직] 이미 존재하는 회원은 직책(Role) 덮어쓰기 방지 및 학번/이름 모두 검색
+  // 🌟 에러 상세 로깅 및 빈 줄 무시 로직 강화
   const handleBatchUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
@@ -398,14 +398,18 @@ export default function AdminPage() {
           const row = parsedData[i];
           
           const name = String(row['성명'] || row['이름'] || '').trim();
-          const college = String(row['단대'] || row['단과대학'] || '').trim();
-          const major = String(row['학과(부)'] || row['학과'] || row['전공'] || '').trim();
           const studentId = String(row['학번'] || '').trim();
-          const grade = String(row['학년'] || '').trim();
-          
           const rawPhone = String(row['연락처'] || row['전화번호'] || row['핸드폰'] || '').trim();
           const phone = rawPhone.replace(/[^0-9]/g, ''); 
           
+          // 이름, 학번, 전화번호 중 하나라도 없으면 엑셀의 빈 줄(,,,,,,)이므로 그냥 무시하고 스킵! (실패 카운트 안 올림)
+          if (!name || !studentId || !phone) { 
+            continue; 
+          }
+
+          const college = String(row['단대'] || row['단과대학'] || '').trim();
+          const major = String(row['학과(부)'] || row['학과'] || row['전공'] || '').trim();
+          const grade = String(row['학년'] || '').trim();
           const enrollmentStatus = String(row['재학/휴학'] || row['상태'] || '재학').trim(); 
 
           const roleString = String(row['직책'] || '').trim();
@@ -413,11 +417,9 @@ export default function AdminPage() {
           if (roleString.includes('회장')) assignRole = 'president';
           else if (roleString.includes('부회장') || roleString.includes('관리자') || roleString.includes('임원')) assignRole = 'admin';
 
-          if (!name || !studentId || !phone) { failCount++; continue; }
           const pseudoEmail = `${studentId}@bandon.com`;
           
           try {
-            // 🌟 1. '학번'이나 '이름' 둘 중 하나라도 일치하는 회원이 있는지 스마트하게 검색
             const { data: existingProfiles } = await supabase
               .from('profiles')
               .select('id, student_id, name')
@@ -429,10 +431,8 @@ export default function AdminPage() {
             }
 
             if (existingProfile) {
-              // 🌟 2. 이미 존재하는 회원이면 정보만 '업데이트' 
-              // (요청사항 반영: 서비스 상의 등급(Role)은 절대 덮어쓰지 않음!)
               const { error: updateError } = await supabase.from('profiles').update({
-                student_id: studentId, // 학번이 비어있었다면 엑셀 기준으로 채워줌
+                student_id: studentId, 
                 phone: phone, 
                 college: college, 
                 major: major, 
@@ -441,13 +441,12 @@ export default function AdminPage() {
               }).eq('id', existingProfile.id);
               
               if (updateError) {
-                lastErrorMessage = `[${name}] 수정 에러: ` + updateError.message;
+                lastErrorMessage = `[${name}] 정보 갱신 실패: ` + updateError.message;
                 failCount++;
               } else {
                 updateCount++;
               }
             } else {
-              // 🌟 3. 명단에 아예 없는 새로운 회원이면 신규 가입 API 호출
               const res = await fetch('/api/create-user', {
                 method: 'POST',
                 headers: { 
@@ -459,7 +458,12 @@ export default function AdminPage() {
               const resData = await res.json();
               
               if (!res.ok) {
-                lastErrorMessage = `[${name}] 가입 에러: ` + (resData.error || '알 수 없는 에러');
+                // 🌟 서버에서 온 에러 메시지를 undefined가 아닌 명확한 텍스트로 추출
+                let detailedError = '알 수 없는 서버 에러 (가입 차단됨)';
+                if (resData.error) detailedError = typeof resData.error === 'string' ? resData.error : JSON.stringify(resData.error);
+                else if (resData.message) detailedError = resData.message;
+                
+                lastErrorMessage = `[${name}] 신규 가입 에러: ` + detailedError;
                 failCount++; 
                 continue; 
               }
@@ -470,7 +474,7 @@ export default function AdminPage() {
                 });
                 
                 if (profileError) {
-                  lastErrorMessage = `[${name}] 프로필 에러: ` + profileError.message;
+                  lastErrorMessage = `[${name}] 프로필 생성 에러: ` + profileError.message;
                   failCount++;
                 } else {
                   successCount++;
@@ -478,7 +482,7 @@ export default function AdminPage() {
               }
             }
           } catch (err: any) { 
-            lastErrorMessage = `[${name}] 통신 에러: ` + (err.message || '알 수 없는 오류');
+            lastErrorMessage = `[${name}] 네트워크 통신 에러: ` + (err.message || '인터넷 연결을 확인하세요');
             failCount++; 
           }
           setUploadProgress(prev => ({ ...prev, current: prev.current + 1 }));
@@ -486,7 +490,7 @@ export default function AdminPage() {
         
         let resultMsg = `일괄 처리가 완료되었습니다!\n\n✅ 신규 가입 성공: ${successCount}명\n🔄 기존 회원 정보 갱신: ${updateCount}명\n❌ 실패: ${failCount}명`;
         if (failCount > 0 && lastErrorMessage) {
-          resultMsg += `\n\n⚠️ 실패 원인(참고용): ${lastErrorMessage}`;
+          resultMsg += `\n\n⚠️ 최근 실패 원인: ${lastErrorMessage}\n(※ 'rate limit'이 포함된 에러라면 Supabase의 Rate Limits 설정을 높여주세요!)`;
         }
         alert(resultMsg);
 
