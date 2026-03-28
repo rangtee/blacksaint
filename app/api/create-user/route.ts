@@ -43,6 +43,9 @@ export async function POST(request: Request) {
 
     const { email, password } = await request.json();
 
+    // 👇 이 줄을 추가해주세요!
+    console.log("👉 [서버 도착 데이터]:", `[${email}]`, `[${password}]`);
+
     const { data, error } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
