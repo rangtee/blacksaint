@@ -333,7 +333,7 @@ export default function AdminPage() {
     } finally { setIsSubmitting(false); }
   };
 
-  // 🌟 [핵심 업데이트] 이미 존재하는 회원은 '수정' 처리하고 튕기는 원인을 정확히 잡아내는 스마트 일괄 등록
+  // 🌟 [핵심 로직] 이미 존재하는 회원은 직책(Role) 덮어쓰기 방지 및 학번/이름 모두 검색
   const handleBatchUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
@@ -389,7 +389,7 @@ export default function AdminPage() {
         let successCount = 0; 
         let failCount = 0; 
         let updateCount = 0;
-        let lastErrorMessage = ''; // 에러 원인 추적용
+        let lastErrorMessage = ''; 
 
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
@@ -417,17 +417,27 @@ export default function AdminPage() {
           const pseudoEmail = `${studentId}@bandon.com`;
           
           try {
-            // 🌟 1. 이미 등록된 학번인지 프로필 테이블에서 확인
-            const { data: existingProfile } = await supabase
+            // 🌟 1. '학번'이나 '이름' 둘 중 하나라도 일치하는 회원이 있는지 스마트하게 검색
+            const { data: existingProfiles } = await supabase
               .from('profiles')
-              .select('id')
-              .eq('student_id', studentId)
-              .maybeSingle();
+              .select('id, student_id, name')
+              .or(`student_id.eq.${studentId},name.eq.${name}`);
+
+            let existingProfile = null;
+            if (existingProfiles && existingProfiles.length > 0) {
+              existingProfile = existingProfiles.find(p => p.student_id === studentId) || existingProfiles.find(p => p.name === name);
+            }
 
             if (existingProfile) {
-              // 🌟 2. 이미 존재하는 회원이면 정보만 '업데이트(수정)' 하고 넘어감
+              // 🌟 2. 이미 존재하는 회원이면 정보만 '업데이트' 
+              // (요청사항 반영: 서비스 상의 등급(Role)은 절대 덮어쓰지 않음!)
               const { error: updateError } = await supabase.from('profiles').update({
-                name, phone, college, major, grade, enrollment_status: enrollmentStatus, role: assignRole
+                student_id: studentId, // 학번이 비어있었다면 엑셀 기준으로 채워줌
+                phone: phone, 
+                college: college, 
+                major: major, 
+                grade: grade, 
+                enrollment_status: enrollmentStatus
               }).eq('id', existingProfile.id);
               
               if (updateError) {
@@ -437,7 +447,7 @@ export default function AdminPage() {
                 updateCount++;
               }
             } else {
-              // 🌟 3. 완전히 새로운 회원이면 신규 가입 API 호출
+              // 🌟 3. 명단에 아예 없는 새로운 회원이면 신규 가입 API 호출
               const res = await fetch('/api/create-user', {
                 method: 'POST',
                 headers: { 
@@ -476,7 +486,7 @@ export default function AdminPage() {
         
         let resultMsg = `일괄 처리가 완료되었습니다!\n\n✅ 신규 가입 성공: ${successCount}명\n🔄 기존 회원 정보 갱신: ${updateCount}명\n❌ 실패: ${failCount}명`;
         if (failCount > 0 && lastErrorMessage) {
-          resultMsg += `\n\n⚠️ 실패 원인(참고용): ${lastErrorMessage}\n(계정이 꼬인 경우 Supabase Authentication에서 삭제 후 다시 시도해보세요.)`;
+          resultMsg += `\n\n⚠️ 실패 원인(참고용): ${lastErrorMessage}`;
         }
         alert(resultMsg);
 
