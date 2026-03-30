@@ -20,56 +20,10 @@ export default function DashboardPage() {
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 🌟 UI 확인을 위해 임시 데이터(Dummy Data)를 채워 넣었습니다!
-  const [upcoming, setUpcoming] = useState<Upcoming[]>([
-    {
-      id: 1,
-      team_name: "블랙세인트 1기",
-      time: "19:00 - 21:00",
-      location: "제 1 합주실",
-      image_url: "https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?q=80&w=1000&auto=format&fit=crop"
-    }
-  ]); 
-
-  const [feeds, setFeeds] = useState<Feed[]>([
-    {
-      id: 1,
-      type: 'new_member',
-      title: "신규 부원 가입",
-      description: "새로운 드럼 세션 부원이 합류했습니다! 환영해주세요.",
-      time_ago: "2시간 전",
-      target: "전체"
-    },
-    {
-      id: 2,
-      type: 'new_post',
-      title: "합주곡 투표",
-      description: "이번 주말 합주곡 후보 투표가 시작되었습니다.",
-      time_ago: "1일 전",
-      target: "블랙세인트 1기"
-    }
-  ]);
-
-  const [notices, setNotices] = useState<Notice[]>([
-    {
-      id: 1,
-      title: "이번 주 정기 합주실 사용 안내",
-      created_at: "2026-03-30",
-      is_important: true,
-      icon: 'calendar',
-      time_ago: "3시간 전",
-      author: "회장"
-    },
-    {
-      id: 2,
-      title: "앰프 수리 완료 공지",
-      created_at: "2026-03-29",
-      is_important: false,
-      icon: 'wrench',
-      time_ago: "1일 전",
-      author: "관리자"
-    }
-  ]);
+  // 초기값을 빈 배열로 설정 (실제 데이터를 불러오기 전까지 빈 상태 유지)
+  const [upcoming, setUpcoming] = useState<Upcoming[]>([]); 
+  const [feeds, setFeeds] = useState<Feed[]>([]);
+  const [notices, setNotices] = useState<Notice[]>([]);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -81,15 +35,47 @@ export default function DashboardPage() {
         return;
       }
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', session.user.id)
-        .single();
-      
-      if (profile) setUserProfile(profile);
-      
-      setIsLoading(false);
+      try {
+        // 1. 사용자 프로필 가져오기
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        
+        if (profile) setUserProfile(profile);
+
+        // 2. 다가오는 합주 일정 가져오기 (가정: 테이블 이름이 'reservations' 또는 'upcoming'인 경우)
+        const { data: upcomingData } = await supabase
+          .from('reservations') // 실제 사용하시는 합주 일정 테이블명으로 변경하세요 (예: schedules, reservations 등)
+          .select('*')
+          .limit(3);
+        
+        if (upcomingData) setUpcoming(upcomingData);
+
+        // 3. 내 팀 소식(Feed) 가져오기
+        const { data: feedsData } = await supabase
+          .from('feeds') // 실제 사용하시는 피드 테이블명으로 변경하세요
+          .select('*')
+          .order('id', { ascending: false })
+          .limit(5);
+
+        if (feedsData) setFeeds(feedsData);
+
+        // 4. 주요 공지사항 가져오기
+        const { data: noticesData } = await supabase
+          .from('notices') // 실제 사용하시는 공지사항 테이블명으로 변경하세요
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(5);
+
+        if (noticesData) setNotices(noticesData);
+
+      } catch (error) {
+        console.error("데이터를 불러오는 중 오류가 발생했습니다:", error);
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     fetchDashboardData();
