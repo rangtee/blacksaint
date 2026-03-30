@@ -12,15 +12,32 @@ import { supabase } from '../lib/supabase';
 // --- 인터페이스 정의 ---
 interface Profile { id: string; name: string; student_id: string; session: string; role: string; profile_image_url?: string; }
 interface Notice { id: number; title: string; created_at: string; is_important: boolean; icon: 'calendar' | 'wrench'; time_ago: string; author: string; }
-interface Upcoming { id: number; team_name: string; time: string; location: string; image_url: string; }
+// 🚨 date 속성이 추가되었습니다. (DB 테이블에 date 컬럼 필수)
+interface Upcoming { id: number; team_name: string; date: string; time: string; location: string; image_url: string; }
 interface Feed { id: number; type: 'new_member' | 'new_post'; title: string; description: string; time_ago: string; target: string; }
+
+// --- D-Day 계산 함수 ---
+const calculateDday = (targetDate: string) => {
+  if (!targetDate) return 'D-?';
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // 시간 제외 날짜만 비교
+  
+  const target = new Date(targetDate);
+  target.setHours(0, 0, 0, 0);
+  
+  const diffTime = target.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return 'D-DAY';
+  if (diffDays > 0) return `D-${diffDays}`;
+  return `D+${Math.abs(diffDays)}`; // 지난 일정의 경우
+};
 
 export default function DashboardPage() {
   const router = useRouter();
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 초기값을 빈 배열로 설정 (실제 데이터를 불러오기 전까지 빈 상태 유지)
   const [upcoming, setUpcoming] = useState<Upcoming[]>([]); 
   const [feeds, setFeeds] = useState<Feed[]>([]);
   const [notices, setNotices] = useState<Notice[]>([]);
@@ -36,7 +53,6 @@ export default function DashboardPage() {
       }
 
       try {
-        // 1. 사용자 프로필 가져오기
         const { data: profile } = await supabase
           .from('profiles')
           .select('*')
@@ -45,17 +61,16 @@ export default function DashboardPage() {
         
         if (profile) setUserProfile(profile);
 
-        // 2. 다가오는 합주 일정 가져오기 (가장 최근 일정 딱 1개만)
+        // 2. 다가오는 합주 일정 가져오기 (가장 최근 일정 1개)
         const { data: upcomingData } = await supabase
-          .from('reservations') // 실제 사용하시는 합주 일정 테이블명
+          .from('reservations') 
           .select('*')
-          // 날짜(시간) 기준으로 가장 가까운 일정을 가져오려면 아래 주석을 풀고 날짜 컬럼명을 맞춰주세요!
-          // .order('time', { ascending: true }) 
-          .limit(1); // 👈 여러 개가 아닌 1개만 가져오도록 제한합니다.
+          // .order('date', { ascending: true }) // 날짜가 가까운 순으로 정렬하려면 주석 해제
+          .limit(1);
         
         if (upcomingData) setUpcoming(upcomingData);
 
-        // 3. 내 팀 소식(Feed) 가져오기
+        // 3. 내 팀 소식 가져오기
         const { data: feedsData } = await supabase
           .from('feeds') 
           .select('*')
@@ -90,7 +105,6 @@ export default function DashboardPage() {
   return (
     <div className="flex-1 flex flex-col min-h-screen bg-bg-base text-text-base font-sans pb-24 md:pb-0 overflow-x-hidden transition-colors duration-300">
       
-      {/* 📱 모바일 전용 상단 헤더 */}
       <header className="md:hidden flex items-center justify-between p-4 sticky top-0 z-30 bg-bg-surface/90 backdrop-blur-md border-b border-border-base transition-colors duration-300">
         <div className="flex items-center gap-3">
           <div className="relative">
@@ -114,7 +128,6 @@ export default function DashboardPage() {
         </button>
       </header>
 
-      {/* 메인 콘텐츠 구역 */}
       <main className="px-4 md:px-8 py-6 md:py-8 max-w-7xl mx-auto w-full space-y-8">
         
         {/* Section 1: 다가오는 합주 일정 */}
@@ -133,14 +146,18 @@ export default function DashboardPage() {
               <Link href="/reservation" className="text-xs text-primary mt-2 hover:underline">일정 예약하기</Link>
             </div>
           ) : (
-            upcoming.map(item => (
+            upcoming.map(item => {
+              const dDayStr = calculateDday(item.date);
+              
+              return (
               <div key={item.id} className="relative overflow-hidden rounded-4xl bg-bg-surface border border-border-base shadow-sm dark:shadow-none transition-colors duration-300">
                 <div className="h-48 w-full bg-cover bg-center relative" style={{ backgroundImage: `url("${item.image_url}")` }}>
                   <div className="absolute inset-0 bg-linear-to-t from-slate-950/90 dark:from-black/80 to-transparent transition-colors"></div>
                   <div className="absolute bottom-4 left-5 flex items-center gap-2.5">
+                    {/* 동적 D-Day 뱃지 */}
                     <span className="px-2.5 py-1 rounded-md bg-primary text-xs font-black text-white uppercase tracking-widest flex items-center gap-1.5 shadow-lg">
-                        <span className="size-1.5 bg-white rounded-full animate-pulse"></span>
-                        D-Day
+                        {dDayStr === 'D-DAY' && <span className="size-1.5 bg-white rounded-full animate-pulse"></span>}
+                        {dDayStr}
                     </span>
                     <p className="text-xl font-black text-white drop-shadow-md tracking-tight">{item.team_name} 합주</p>
                   </div>
@@ -150,7 +167,9 @@ export default function DashboardPage() {
                     
                     <div className="flex flex-wrap items-center gap-4 text-slate-600 dark:text-slate-400 font-medium">
                       <div className="flex items-center gap-2.5 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 px-3 py-1.5 rounded-full transition-colors text-sm">
-                        <Clock className="w-4 h-4 text-primary" /> 오늘 {item.time}
+                        <Clock className="w-4 h-4 text-primary" /> 
+                        {/* D-DAY 여부에 따라 '오늘' 또는 '날짜' 표시 */}
+                        {dDayStr === 'D-DAY' ? '오늘' : item.date} {item.time}
                       </div>
                       <div className="flex items-center gap-2.5 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 px-3 py-1.5 rounded-full transition-colors text-sm">
                         <MapPin className="w-4 h-4 text-primary" /> {item.location}
@@ -158,14 +177,17 @@ export default function DashboardPage() {
                     </div>
                     <div className="flex items-center justify-between mt-2 pt-5 border-t border-border-base transition-colors">
                       <p className="text-xs text-text-muted">합주 시작 10분 전까지 도착해주세요.</p>
-                      <button className="bg-primary hover:brightness-110 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-primary/20 active:scale-95 transition-all text-sm">
-                        상세보기
-                      </button>
+                      {/* 상세보기 클릭 시 예약 페이지로 이동 */}
+                      <Link href="/reservation">
+                        <button className="bg-primary hover:brightness-110 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-primary/20 active:scale-95 transition-all text-sm">
+                          상세보기
+                        </button>
+                      </Link>
                     </div>
                   </div>
                 </div>
               </div>
-            ))
+            )})
           )}
         </section>
 
