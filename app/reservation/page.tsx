@@ -1,5 +1,6 @@
 "use client";
-import React, { useState, useEffect, Fragment } from 'react';
+import React, { useState, useEffect, Fragment, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation'; // 👈 URL 파라미터를 읽기 위해 추가!
 import { Plus, ChevronLeft, ChevronRight, X, Trash2, Clock, Calendar as CalendarIcon, AlertCircle } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 import { supabase } from '../../lib/supabase';
@@ -17,7 +18,11 @@ interface Booking {
   series_id: string | null;
 }
 
-export default function TimetablePage() {
+// Next.js 규칙에 따라 useSearchParams를 안전하게 쓰기 위해 분리
+function TimetableContent() {
+  const searchParams = useSearchParams();
+  const queryDate = searchParams.get('date');
+
   const [isOpen, setIsOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
@@ -27,7 +32,11 @@ export default function TimetablePage() {
   const [isAdmin, setIsAdmin] = useState(false); 
   
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [currentViewDate, setCurrentViewDate] = useState(new Date());
+  
+  // 🚨 쿼리 파라미터 날짜가 있으면 그 날짜를, 없으면 오늘 날짜를 기준으로 달력 이동!
+  const [currentViewDate, setCurrentViewDate] = useState(() => {
+    return queryDate ? new Date(queryDate) : new Date();
+  });
   
   const [teamId, setTeamId] = useState('');
   const [date, setDate] = useState(''); 
@@ -58,14 +67,6 @@ export default function TimetablePage() {
     const h = Math.floor(time).toString().padStart(2, '0');
     const m = time % 1 === 0 ? '00' : '30';
     return `${h}:${m}`;
-  };
-
-  const getHexWithOpacity = (hex: string, opacity: number) => {
-    const cleanHex = hex.replace('#', '');
-    const r = parseInt(cleanHex.substring(0, 2), 16);
-    const g = parseInt(cleanHex.substring(2, 4), 16);
-    const b = parseInt(cleanHex.substring(4, 6), 16);
-    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
   };
 
   const fetchData = async () => {
@@ -116,27 +117,21 @@ export default function TimetablePage() {
   };
 
   useEffect(() => { fetchData(); }, []);
+  
+  // URL에서 파라미터가 바뀔 때 달력을 동기화
+  useEffect(() => {
+    if (queryDate) setCurrentViewDate(new Date(queryDate));
+  }, [queryDate]);
 
-  const handleMouseDown = (targetDate: string, time: number) => {
-    setDragState({ isDragging: true, date: targetDate, start: time, end: time });
-  };
-
-  const handleMouseEnter = (targetDate: string, time: number) => {
-    if (dragState.isDragging && dragState.date === targetDate) {
-      setDragState(prev => ({ ...prev, end: time }));
-    }
-  };
+  const handleMouseDown = (targetDate: string, time: number) => setDragState({ isDragging: true, date: targetDate, start: time, end: time });
+  const handleMouseEnter = (targetDate: string, time: number) => { if (dragState.isDragging && dragState.date === targetDate) setDragState(prev => ({ ...prev, end: time })); };
 
   const handleMouseUp = () => {
     if (dragState.isDragging && dragState.date !== null && dragState.start !== null && dragState.end !== null) {
       const finalStart = Math.min(dragState.start, dragState.end);
       const finalEnd = Math.max(dragState.start, dragState.end) + 0.5; 
-      
       if (finalEnd - finalStart > 0) {
-        setDate(dragState.date);
-        setStartTime(finalStart);
-        setEndTime(finalEnd);
-        setIsOpen(true);
+        setDate(dragState.date); setStartTime(finalStart); setEndTime(finalEnd); setIsOpen(true);
       }
     }
     setDragState({ isDragging: false, date: null, start: null, end: null });
@@ -144,7 +139,6 @@ export default function TimetablePage() {
 
   const handleDeleteBooking = async (type: 'single' | 'series') => {
     if (!selectedBooking) return;
-    
     const confirmMsg = type === 'series' ? '이 정기 예약의 모든 일정을 취소하시겠습니까?' : '이 일정만 취소하시겠습니까?';
     if (!confirm(confirmMsg)) return;
 
@@ -154,14 +148,9 @@ export default function TimetablePage() {
 
     const { error } = await query;
     if (error) alert('취소 실패: ' + error.message);
-    else {
-      alert('취소가 완료되었습니다.');
-      setIsDetailOpen(false);
-      fetchData();
-    }
+    else { alert('취소가 완료되었습니다.'); setIsDetailOpen(false); fetchData(); }
   };
 
-  // 🌟 핵심 보안 패치: 동시성 예약 에러(Race Condition)를 잡아내는 로직
   const handleReservation = async () => {
     if (!teamId || !date) return alert('팀과 날짜를 선택해주세요!');
     if (isRecurring && !recurringEndDate) return alert('정기 예약 종료 날짜를 선택해주세요!');
@@ -190,7 +179,6 @@ export default function TimetablePage() {
         series_id: series_id
       }));
 
-      // 1. 프론트엔드 단의 1차 검사 (화면의 즉각적인 반응을 위해 유지)
       const { data: existing } = await supabase.from('reservations').select('*').in('reservation_date', datesToBook);
       const overlap = existing?.some((res: any) => {
         const s = new Date(res.start_time).getHours() + new Date(res.start_time).getMinutes() / 60;
@@ -198,34 +186,19 @@ export default function TimetablePage() {
         return startTime < e && endTime > s;
       });
 
-      if (overlap) {
-        alert('❌ 선택하신 시간에 겹치는 예약이 있습니다.');
-        setIsSubmitting(false);
-        return;
-      }
+      if (overlap) { alert('❌ 선택하신 시간에 겹치는 예약이 있습니다.'); setIsSubmitting(false); return; }
 
-      // 2. DB로 예약 데이터 전송 (여기서 동시성 중복 발생 시 DB가 에러를 뿜음)
       const { error } = await supabase.from('reservations').insert(payload);
-
-      // 3. DB 제약조건(Exclusion Constraint) 에러 캐치!
       if (error) {
         if (error.code === '23P01' || error.message.includes('prevent_overlapping_reservations')) {
            alert('🚨 방금 전 다른 누군가가 간발의 차이로 해당 시간을 먼저 예약했습니다! 시간을 다시 선택해주세요.');
-        } else {
-           alert('예약 처리 중 오류가 발생했습니다: ' + error.message);
-        }
-        setIsSubmitting(false);
-        return;
+        } else { alert('예약 처리 중 오류가 발생했습니다: ' + error.message); }
+        setIsSubmitting(false); return;
       }
 
       alert(`🎉 예약이 완료되었습니다! ${isRecurring ? `(총 ${datesToBook.length}건)` : ''}`);
-      setIsOpen(false); fetchData();
-      setTeamId(''); setIsRecurring(false); setRecurringEndDate('');
-    } catch (e: any) {
-      alert('오류: ' + e.message);
-    } finally {
-      setIsSubmitting(false);
-    }
+      setIsOpen(false); fetchData(); setTeamId(''); setIsRecurring(false); setRecurringEndDate('');
+    } catch (e: any) { alert('오류: ' + e.message); } finally { setIsSubmitting(false); }
   };
 
   const weekDays = (() => {
@@ -240,21 +213,11 @@ export default function TimetablePage() {
       const d = new Date(start);
       d.setDate(start.getDate() + i);
       const fullDate = formatDateString(d);
-      
       let dateDisplay = d.getDate().toString();
-      
-      if (d.getMonth() !== startMonth) {
-        dateDisplay = `${d.getMonth() + 1}.${d.getDate()}`;
-      }
+      if (d.getMonth() !== startMonth) dateDisplay = `${d.getMonth() + 1}.${d.getDate()}`;
 
-      days.push({
-        day: ['월','화','수','목','금','토','일'][i],
-        dateNum: dateDisplay,
-        fullDate: fullDate,
-        isToday: fullDate === formatDateString(new Date())
-      });
+      days.push({ day: ['월','화','수','목','금','토','일'][i], dateNum: dateDisplay, fullDate: fullDate, isToday: fullDate === formatDateString(new Date()) });
     }
-    
     return days;
   })();
 
@@ -303,21 +266,8 @@ export default function TimetablePage() {
                 {weekDays.map((wd, di) => (
                   <div key={di} className="border-r border-border-base last:border-0 relative transition-colors">
                     {hours.map(h => {
-                      const isSelected = dragState.isDragging && 
-                                         dragState.date === wd.fullDate && 
-                                         dragState.start !== null && 
-                                         dragState.end !== null && 
-                                         h >= Math.min(dragState.start, dragState.end) && 
-                                         h <= Math.max(dragState.start, dragState.end);
-                      
-                      return (
-                        <div 
-                          key={h} 
-                          onMouseDown={() => handleMouseDown(wd.fullDate, h)}
-                          onMouseEnter={() => handleMouseEnter(wd.fullDate, h)}
-                          className={`h-20 border-b border-border-base cursor-pointer transition-colors ${isSelected ? 'bg-primary/20 dark:bg-primary/30' : 'hover:bg-slate-200/50 dark:hover:bg-slate-800/30'}`} 
-                        />
-                      )
+                      const isSelected = dragState.isDragging && dragState.date === wd.fullDate && dragState.start !== null && dragState.end !== null && h >= Math.min(dragState.start, dragState.end) && h <= Math.max(dragState.start, dragState.end);
+                      return ( <div key={h} onMouseDown={() => handleMouseDown(wd.fullDate, h)} onMouseEnter={() => handleMouseEnter(wd.fullDate, h)} className={`h-20 border-b border-border-base cursor-pointer transition-colors ${isSelected ? 'bg-primary/20 dark:bg-primary/30' : 'hover:bg-slate-200/50 dark:hover:bg-slate-800/30'}`} /> )
                     })}
                   </div>
                 ))}
@@ -325,16 +275,7 @@ export default function TimetablePage() {
                 {bookings.filter(b => weekDays.some(wd => wd.fullDate === b.fullDate)).map(b => (
                   <div key={b.id} onClick={(e) => { e.stopPropagation(); setSelectedBooking(b); setIsDetailOpen(true); }} 
                        className="absolute inset-x-1 rounded p-2 md:p-2.5 z-10 shadow-md hover:brightness-110 transition cursor-pointer flex flex-col"
-                       style={{ 
-                         top: `${(b.start - 8) * 5}rem`, 
-                         left: `calc((100% / 7) * ${b.dayIndex})`, 
-                         width: `calc(100% / 7 - 8px)`, 
-                         height: `calc(${b.duration * 5}rem - 4px)`, 
-                         marginLeft: '4px', 
-                         marginTop: '2px',
-                         backgroundColor: b.teamColor, 
-                         color: '#ffffff', 
-                       }}>
+                       style={{ top: `${(b.start - 8) * 5}rem`, left: `calc((100% / 7) * ${b.dayIndex})`, width: `calc(100% / 7 - 8px)`, height: `calc(${b.duration * 5}rem - 4px)`, marginLeft: '4px', marginTop: '2px', backgroundColor: b.teamColor, color: '#ffffff', }}>
                     <p className="text-xs sm:text-sm md:text-base font-black uppercase truncate leading-tight mb-0.5 drop-shadow-sm">{b.team}</p>
                     <p className="text-[10px] sm:text-xs font-semibold opacity-90 tracking-tight drop-shadow-sm">{formatTimeToString(b.start)} - {formatTimeToString(b.start+b.duration)}</p>
                   </div>
@@ -427,12 +368,10 @@ export default function TimetablePage() {
 }
 
 function ReservationForm({ teamId, setTeamId, date, setDate, startTime, setStartTime, endTime, setEndTime, isRecurring, setIsRecurring, recurringEndDate, setRecurringEndDate, isSubmitting, handleReservation, teams, formatTimeToString, timeSlots }: any) {
-  
   const handleSetWeeks = (weeks: number) => {
     if (!date) return alert('예약 시작 날짜를 먼저 선택해주세요!');
     const startDate = new Date(date);
     startDate.setDate(startDate.getDate() + (weeks - 1) * 7);
-    
     const year = startDate.getFullYear();
     const month = String(startDate.getMonth() + 1).padStart(2, '0');
     const day = String(startDate.getDate()).padStart(2, '0');
@@ -453,40 +392,24 @@ function ReservationForm({ teamId, setTeamId, date, setDate, startTime, setStart
       <div className="space-y-4">
         <div>
           <label className="text-[10px] font-bold text-text-muted uppercase mb-1 block tracking-widest">Start Date</label>
-          <input 
-            type="date" 
-            value={date} 
-            onChange={e => setDate(e.target.value)} 
-            className="scheme-light dark:scheme-dark w-full bg-bg-base border border-border-base rounded-lg p-3 text-text-base focus:border-primary outline-none transition-colors cursor-pointer block"
-          />
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} className="scheme-light dark:scheme-dark w-full bg-bg-base border border-border-base rounded-lg p-3 text-text-base focus:border-primary outline-none transition-colors cursor-pointer block" />
         </div>
 
         <label className="flex items-center gap-3 cursor-pointer group bg-bg-base/50 p-3 rounded-lg border border-border-base hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
-          <input 
-            type="checkbox" 
-            checked={isRecurring} 
-            onChange={e => setIsRecurring(e.target.checked)} 
-            className="w-5 h-5 rounded border-slate-300 dark:border-slate-700 text-primary bg-bg-surface focus:ring-primary transition-colors" 
-          />
+          <input type="checkbox" checked={isRecurring} onChange={e => setIsRecurring(e.target.checked)} className="w-5 h-5 rounded border-slate-300 dark:border-slate-700 text-primary bg-bg-surface focus:ring-primary transition-colors" />
           <span className="text-sm font-bold text-text-muted group-hover:text-text-base transition-colors">정기 스케줄로 등록</span>
         </label>
 
         {isRecurring && (
           <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl space-y-2 animate-in fade-in slide-in-from-top-2">
             <label className="text-[10px] font-bold text-primary uppercase block tracking-widest">Until (End Date)</label>
-            <input 
-              type="date" 
-              value={recurringEndDate} 
-              onChange={e => setRecurringEndDate(e.target.value)} 
-              className="scheme-light dark:scheme-dark w-full bg-bg-surface border border-primary/30 rounded-lg p-3 text-text-base focus:border-primary outline-none transition-colors cursor-pointer"
-            />
+            <input type="date" value={recurringEndDate} onChange={e => setRecurringEndDate(e.target.value)} className="scheme-light dark:scheme-dark w-full bg-bg-surface border border-primary/30 rounded-lg p-3 text-text-base focus:border-primary outline-none transition-colors cursor-pointer" />
             
             <div className="flex gap-2 mt-2">
               <button type="button" onClick={() => handleSetWeeks(4)} className="flex-1 py-2 text-xs font-bold bg-bg-surface border border-primary/20 rounded-lg hover:bg-primary/10 hover:border-primary/50 transition-colors text-primary/70 hover:text-primary">4주 동안</button>
               <button type="button" onClick={() => handleSetWeeks(8)} className="flex-1 py-2 text-xs font-bold bg-bg-surface border border-primary/20 rounded-lg hover:bg-primary/10 hover:border-primary/50 transition-colors text-primary/70 hover:text-primary">8주 동안</button>
               <button type="button" onClick={() => handleSetWeeks(12)} className="flex-1 py-2 text-xs font-bold bg-bg-surface border border-primary/20 rounded-lg hover:bg-primary/10 hover:border-primary/50 transition-colors text-primary/70 hover:text-primary">12주 동안</button>
             </div>
-            
             <p className="text-[10px] text-text-muted font-medium mt-1">* 선택한 날짜까지 매주 같은 시간에 예약됩니다.</p>
           </div>
         )}
@@ -501,5 +424,14 @@ function ReservationForm({ teamId, setTeamId, date, setDate, startTime, setStart
         {isSubmitting ? '처리 중...' : '예약 확정하기'}
       </button>
     </div>
+  );
+}
+
+// 빌드 중 에러를 막기 위해 최상단은 Suspense로 감싸기
+export default function TimetablePageWrapper() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen text-slate-500">예약 일정을 불러오는 중입니다...</div>}>
+      <TimetableContent />
+    </Suspense>
   );
 }
