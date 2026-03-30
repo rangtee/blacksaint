@@ -12,13 +12,14 @@ import { supabase } from '../lib/supabase';
 // --- 인터페이스 정의 ---
 interface Profile { id: string; name: string; student_id: string; session: string; role: string; profile_image_url?: string; }
 interface Notice { id: number; title: string; created_at: string; is_important: boolean; icon: 'calendar' | 'wrench'; time_ago: string; author: string; }
-// 🚨 date 속성이 추가되었습니다. (DB 테이블에 date 컬럼 필수)
+// 🚨 만약 Supabase 테이블의 날짜 컬럼명이 'date'가 아니라면 아래와 밑의 코드들을 수정해야 합니다. (예: reservation_date)
 interface Upcoming { id: number; team_name: string; date: string; time: string; location: string; image_url: string; }
 interface Feed { id: number; type: 'new_member' | 'new_post'; title: string; description: string; time_ago: string; target: string; }
 
 // --- D-Day 계산 함수 ---
 const calculateDday = (targetDate: string) => {
-  if (!targetDate) return 'D-?';
+  if (!targetDate) return 'D-?'; // 날짜 데이터가 없을 때 표시됩니다.
+  
   const today = new Date();
   today.setHours(0, 0, 0, 0); // 시간 제외 날짜만 비교
   
@@ -61,12 +62,14 @@ export default function DashboardPage() {
         
         if (profile) setUserProfile(profile);
 
-        // 2. 다가오는 합주 일정 가져오기 (가장 최근 일정 1개)
+        // 2. 다가오는 합주 일정 가져오기
         const { data: upcomingData } = await supabase
           .from('reservations') 
           .select('*')
-          // .order('date', { ascending: true }) // 날짜가 가까운 순으로 정렬하려면 주석 해제
           .limit(1);
+        
+        // 🚨 디버깅을 위한 로그 출력 (F12 개발자 도구 콘솔에서 확인하세요!)
+        console.log("👉 [Supabase 합주 일정 데이터]:", upcomingData);
         
         if (upcomingData) setUpcoming(upcomingData);
 
@@ -169,7 +172,7 @@ export default function DashboardPage() {
                       <div className="flex items-center gap-2.5 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 px-3 py-1.5 rounded-full transition-colors text-sm">
                         <Clock className="w-4 h-4 text-primary" /> 
                         {/* D-DAY 여부에 따라 '오늘' 또는 '날짜' 표시 */}
-                        {dDayStr === 'D-DAY' ? '오늘' : item.date} {item.time}
+                        {dDayStr === 'D-DAY' ? '오늘' : item.date || '날짜미상'} {item.time}
                       </div>
                       <div className="flex items-center gap-2.5 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 px-3 py-1.5 rounded-full transition-colors text-sm">
                         <MapPin className="w-4 h-4 text-primary" /> {item.location}
@@ -177,12 +180,14 @@ export default function DashboardPage() {
                     </div>
                     <div className="flex items-center justify-between mt-2 pt-5 border-t border-border-base transition-colors">
                       <p className="text-xs text-text-muted">합주 시작 10분 전까지 도착해주세요.</p>
-                      {/* 상세보기 클릭 시 예약 페이지로 이동 */}
-                      <Link href="/reservation">
+                      
+                      {/* 👇 쿼리 파라미터로 날짜를 함께 넘겨줍니다. */}
+                      <Link href={item.date ? `/reservation?date=${item.date}` : "/reservation"}>
                         <button className="bg-primary hover:brightness-110 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-primary/20 active:scale-95 transition-all text-sm">
                           상세보기
                         </button>
                       </Link>
+
                     </div>
                   </div>
                 </div>
