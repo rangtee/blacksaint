@@ -45,17 +45,19 @@ export default function DashboardPage() {
         
         if (profile) setUserProfile(profile);
 
-        // 2. 다가오는 합주 일정 가져오기 (가정: 테이블 이름이 'reservations' 또는 'upcoming'인 경우)
+        // 2. 다가오는 합주 일정 가져오기 (가장 최근 일정 딱 1개만)
         const { data: upcomingData } = await supabase
-          .from('reservations') // 실제 사용하시는 합주 일정 테이블명으로 변경하세요 (예: schedules, reservations 등)
+          .from('reservations') // 실제 사용하시는 합주 일정 테이블명
           .select('*')
-          .limit(3);
+          // 날짜(시간) 기준으로 가장 가까운 일정을 가져오려면 아래 주석을 풀고 날짜 컬럼명을 맞춰주세요!
+          // .order('time', { ascending: true }) 
+          .limit(1); // 👈 여러 개가 아닌 1개만 가져오도록 제한합니다.
         
         if (upcomingData) setUpcoming(upcomingData);
 
         // 3. 내 팀 소식(Feed) 가져오기
         const { data: feedsData } = await supabase
-          .from('feeds') // 실제 사용하시는 피드 테이블명으로 변경하세요
+          .from('feeds') 
           .select('*')
           .order('id', { ascending: false })
           .limit(5);
@@ -64,7 +66,7 @@ export default function DashboardPage() {
 
         // 4. 주요 공지사항 가져오기
         const { data: noticesData } = await supabase
-          .from('notices') // 실제 사용하시는 공지사항 테이블명으로 변경하세요
+          .from('notices') 
           .select('*')
           .order('created_at', { ascending: false })
           .limit(5);
