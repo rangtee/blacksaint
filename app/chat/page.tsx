@@ -1,8 +1,11 @@
 "use client";
 import React, { useState, useEffect, useRef, Fragment } from 'react';
 import { supabase } from '../../lib/supabase';
-import { MessageSquare, Hash, Users, User as UserIcon, Send, ChevronLeft, Menu, Loader2, Search, Plus, X, UserPlus, Star, ImageIcon, Info, LogOut, Trash2, Download, MessageCirclePlus } from 'lucide-react';
+// 👇 PhoneCall 아이콘이 추가되었습니다.
+import { MessageSquare, Hash, Users, User as UserIcon, Send, ChevronLeft, Menu, Loader2, Search, Plus, X, UserPlus, Star, ImageIcon, Info, LogOut, Trash2, Download, MessageCirclePlus, PhoneCall } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
+// 👇 방금 만든 보이스톡 컴포넌트를 불러옵니다.
+import VoiceTalk from './components/VoiceTalk';
 
 interface Profile { id: string; name: string; profile_image_url?: string; session?: string; generation?: string; }
 interface Team { id: number; name: string; }
@@ -31,6 +34,7 @@ const formatNameWithGen = (name: string, gen?: string | null) => {
 
 export default function ChatPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUserProfile, setCurrentUserProfile] = useState<Profile | null>(null); // 내 정보 저장용 (보이스톡에 이름 넘겨주기 위함)
   const [allUsers, setAllUsers] = useState<Profile[]>([]);
   
   const [activeChatRooms, setActiveChatRooms] = useState<ChatListRoom[]>([]);
@@ -53,6 +57,9 @@ export default function ChatPage() {
   
   const [isRoomInfoOpen, setIsRoomInfoOpen] = useState(false);
   const [roomMembers, setRoomMembers] = useState<any[]>([]);
+
+  // 👇 보이스톡 모달 상태 관리
+  const [isVoiceTalkOpen, setIsVoiceTalkOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -177,6 +184,10 @@ export default function ChatPage() {
       if (usersData) {
         loadedProfiles = usersData.filter(u => u.id !== session.user.id);
         setAllUsers(loadedProfiles);
+        
+        // 내 프로필 정보 찾아두기
+        const myProfile = usersData.find(u => u.id === session.user.id);
+        if (myProfile) setCurrentUserProfile(myProfile as Profile);
       }
 
       await fetchActiveChatRooms(session.user.id, loadedProfiles);
@@ -213,7 +224,6 @@ export default function ChatPage() {
     const channel = supabase.channel(`room_${activeRoom.type}_${activeRoom.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages', filter: `room_id=eq.${activeRoom.id}` }, async (payload) => {
           
-          // 🌟 TypeScript 에러 해결: as any를 사용하여 타입 체킹 우회
           const newRecord = payload.new as any;
           const oldRecord = payload.old as any;
 
@@ -455,6 +465,7 @@ export default function ChatPage() {
       </aside>
 
       <main className="flex-1 flex flex-col h-dvh relative bg-[#F8F9FA] dark:bg-[#0B0F19] transition-colors">
+        {/* 🌟 수정된 상단 헤더 부분 */}
         <header className="h-16 shrink-0 bg-bg-surface/90 backdrop-blur-md border-b border-border-base flex items-center justify-between px-4 z-10">
           <div className="flex items-center gap-3">
             <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 -ml-2 text-text-muted hover:text-primary transition"><Menu className="w-6 h-6" /></button>
@@ -463,9 +474,20 @@ export default function ChatPage() {
               {activeRoom.name}
             </h2>
           </div>
-          {(activeRoom.type === 'custom' || activeRoom.type === 'team') && (
-            <button onClick={openRoomInfo} className="p-2 text-text-muted hover:text-primary transition bg-slate-100 dark:bg-slate-800 rounded-full"><Info className="w-5 h-5" /></button>
-          )}
+          
+          <div className="flex items-center gap-2">
+            {/* 👇 새로 추가된 보이스톡 통화 버튼 */}
+            <button 
+              onClick={() => setIsVoiceTalkOpen(true)}
+              className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-xl text-sm font-bold transition shadow-md shadow-emerald-500/20 active:scale-95"
+            >
+              <PhoneCall className="w-4 h-4" /> <span className="hidden sm:block">보이스톡</span>
+            </button>
+
+            {(activeRoom.type === 'custom' || activeRoom.type === 'team') && (
+              <button onClick={openRoomInfo} className="p-2 text-text-muted hover:text-primary transition bg-slate-100 dark:bg-slate-800 rounded-full"><Info className="w-5 h-5" /></button>
+            )}
+          </div>
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar flex flex-col pb-28 md:pb-24">
@@ -529,6 +551,16 @@ export default function ChatPage() {
             <button type="submit" disabled={!newMessage.trim() && !isUploading} className="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center shrink-0 disabled:opacity-50 transition-all hover:scale-105 active:scale-95 mb-0.5 mr-0.5"><Send className="w-4 h-4 ml-0.5" /></button>
           </form>
         </div>
+
+        {/* 👇 통화 버튼 클릭 시 열리는 모달 (제일 하단에 배치) */}
+        {isVoiceTalkOpen && (
+          <VoiceTalk 
+            roomName={activeRoom.name} 
+            userName={currentUserProfile ? formatNameWithGen(currentUserProfile.name, currentUserProfile.generation) : '알 수 없음'} 
+            onClose={() => setIsVoiceTalkOpen(false)} 
+          />
+        )}
+
       </main>
 
       <Transition appear show={isNewDirectModalOpen} as={Fragment}>
