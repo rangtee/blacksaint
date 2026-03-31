@@ -90,7 +90,7 @@ export default function TeamManagementPage() {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         setCurrentUser(session.user);
-        const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
+        const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).maybeSingle();
         setGlobalRole(profile?.role || 'member');
       }
       
@@ -105,7 +105,7 @@ export default function TeamManagementPage() {
           .from('teams')
           .select('*, team_members(count)')
           .eq('id', teamIdParam)
-          .single();
+          .maybeSingle();
           
         if (teamData) {
           const formattedTeam = { ...teamData, memberCount: teamData.team_members[0]?.count || 0 };
@@ -119,12 +119,14 @@ export default function TeamManagementPage() {
     init();
   }, []);
 
+  // 🌟 핵심 수정: 팀 내 관리 권한 로직 완벽 수정
   const isPresident = globalRole === 'president' || globalRole === 'admin';
-  const isGlobalLeader = globalRole === 'leader';
   const isTeamMember = members.some(m => m.user_id === currentUser?.id);
+  // 'isTeamLeader'는 현재 보고 있는 팀의 멤버 목록(members) 중에서 내 역할이 'Leader'일 때만 참(true)이 됩니다.
   const isTeamLeader = members.some(m => m.user_id === currentUser?.id && m.role === 'Leader');
   
-  const canManageTeam = isPresident || isGlobalLeader || isTeamLeader;
+  // 관리자(회장, 부회장)이거나, '현재 팀의 팀장'일 때만 관리(내보내기 등) 권한 부여
+  const canManageTeam = isPresident || isTeamLeader;
   const canAddContent = isTeamMember || isPresident;
 
   const fetchFolders = async () => {
@@ -206,6 +208,7 @@ export default function TeamManagementPage() {
     }
   };
 
+  // 🌟 팀 생성 시 전체 프로필 권한 업데이트 반영
   const handleCreateTeam = async () => {
     if (!newTeamName.trim()) return;
     if (!currentUser) return alert('로그인 정보가 없습니다. 다시 로그인해 주세요.');
@@ -215,7 +218,7 @@ export default function TeamManagementPage() {
         name: newTeamName, 
         bio: newTeamBio,
         team_color: newTeamColor 
-      }]).select().single();
+      }]).select().maybeSingle();
 
       if (teamError) throw teamError;
 
@@ -228,6 +231,7 @@ export default function TeamManagementPage() {
         
         if (memberError) throw memberError;
 
+        // 등급이 일반 부원일 때만 전체 권한을 팀장으로 격상시킵니다.
         if (globalRole === 'member') {
           await supabase.from('profiles').update({ role: 'leader' }).eq('id', currentUser.id);
           setGlobalRole('leader'); 
@@ -259,10 +263,14 @@ export default function TeamManagementPage() {
     else { fetchMembers(selectedTeam.id); fetchTeams(); }
   };
 
-  // 🌟 (변경) 본인 나가기 & 타인 강퇴를 통합한 함수
   const handleRemoveMember = async () => {
     if (!selectedMember || !selectedTeam) return;
     
+    // 방어코드: 권한 체크를 한 번 더 수행합니다.
+    if (selectedMember.user_id !== currentUser?.id && !canManageTeam) {
+      return alert('다른 팀원을 내보낼 권한이 없습니다.');
+    }
+
     const isSelf = selectedMember.user_id === currentUser?.id;
     const confirmMsg = isSelf ? '정말 이 팀에서 나가시겠습니까?' : '팀에서 내보내시겠습니까?';
     
@@ -283,6 +291,7 @@ export default function TeamManagementPage() {
     }
   };
 
+  // 🌟 직책 변경 시 전체 프로필 권한 업데이트 반영
   const handleChangeRole = async () => {
     if (!selectedMember || !selectedTeam) return;
     
@@ -296,8 +305,9 @@ export default function TeamManagementPage() {
     const { error } = await supabase.from('team_members').update({ role: newRole }).eq('id', selectedMember.id);
     if (error) alert('역할 변경 실패: ' + error.message);
     else {
+      // 팀장으로 임명되었을 때, 전체 등급(profile.role)도 팀장으로 함께 올립니다.
       if (newRole === 'Leader') {
-         const { data: pData } = await supabase.from('profiles').select('role').eq('id', selectedMember.user_id).single();
+         const { data: pData } = await supabase.from('profiles').select('role').eq('id', selectedMember.user_id).maybeSingle();
          if (pData && pData.role === 'member') {
             await supabase.from('profiles').update({ role: 'leader' }).eq('id', selectedMember.user_id);
          }
@@ -641,7 +651,6 @@ export default function TeamManagementPage() {
                           </div>
                         </div>
                         
-                        {/* 🌟 관리자이거나 자기 자신일 경우 세로 점 3개 표시 */}
                         {(canManageTeam || member.user_id === currentUser?.id) && (
                           <button onClick={() => { setSelectedMember(member); setIsActionSheetOpen(true); }} className="p-2 text-text-muted hover:text-text-base hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-lg transition">
                             <MoreVertical className="w-4 h-4" />
