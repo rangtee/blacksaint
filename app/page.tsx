@@ -5,19 +5,20 @@ import Link from 'next/link';
 import { 
   Megaphone, MessageSquare, Clock, User, Shield, 
   ChevronRight, BarChart3, Bell, Calendar, MapPin, 
-  UserPlus, Home, Users, Wrench, CalendarDays, Plus
+  UserPlus, Home, Users, Wrench, CalendarDays, Plus, Mic, Lock
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Profile { id: string; name: string; student_id: string; session: string; role: string; profile_image_url?: string; }
 interface Notice { id: number; title: string; created_at: string; is_important: boolean; icon: 'calendar' | 'wrench'; time_ago: string; author: string; }
-interface Feed { id: number; type: 'new_member' | 'new_post'; title: string; description: string; time_ago: string; target: string; }
+interface Feed { id: number; type: string; title: string; description: string; time_ago: string; target: string; }
 
 interface Upcoming { 
   id: number; 
   reservation_date: string; 
   start_time: string; 
-  teams?: { name: string }; 
+  end_time: string;
+  teams?: { name: string; team_color?: string }; 
 }
 
 const calculateDday = (targetDate: string) => {
@@ -41,6 +42,9 @@ export default function DashboardPage() {
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const [currentLive, setCurrentLive] = useState<Upcoming | null>(null);
+  const [remainingMinutes, setRemainingMinutes] = useState<number>(0);
+
   const [upcoming, setUpcoming] = useState<Upcoming[]>([]); 
   const [feeds, setFeeds] = useState<Feed[]>([]);
   const [notices, setNotices] = useState<Notice[]>([]);
@@ -58,34 +62,74 @@ export default function DashboardPage() {
         const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
         if (profile) setUserProfile(profile);
 
-        // 👇 1. 내가 속한 팀의 ID 목록을 먼저 가져옵니다.
-        const { data: myTeamsData } = await supabase
-          .from('team_members')
-          .select('team_id')
-          .eq('user_id', session.user.id);
-        
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0];
+
+        const { data: liveData } = await supabase
+          .from('reservations')
+          .select('*, teams(name, team_color)')
+          .eq('reservation_date', todayStr);
+
+        if (liveData) {
+          const active = liveData.find((res: any) => {
+            const start = new Date(res.start_time);
+            const end = new Date(res.end_time);
+            return now >= start && now < end;
+          });
+
+          if (active) {
+            setCurrentLive(active);
+            const end = new Date(active.end_time);
+            setRemainingMinutes(Math.floor((end.getTime() - now.getTime()) / 60000));
+          } else {
+            setCurrentLive(null);
+          }
+        }
+
+        const { data: myTeamsData } = await supabase.from('team_members').select('team_id').eq('user_id', session.user.id);
         const myTeamIds = myTeamsData ? myTeamsData.map(t => t.team_id) : [];
 
-        const todayStr = new Date().toISOString().split('T')[0];
-
-        // 👇 2. 내가 속한 팀이 하나라도 있을 때만 합주 일정을 가져옵니다.
         if (myTeamIds.length > 0) {
           const { data: upcomingData } = await supabase
             .from('reservations') 
             .select('*, teams(name)')
-            .in('team_id', myTeamIds) // 내가 속한 팀의 예약만 필터링!
+            .in('team_id', myTeamIds)
             .gte('reservation_date', todayStr)
             .order('reservation_date', { ascending: true })
             .order('start_time', { ascending: true })
             .limit(1);
           
-          if (upcomingData) setUpcoming(upcomingData);
-        } else {
-          setUpcoming([]); // 속한 팀이 없으면 빈 배열 유지
-        }
+          if (upcomingData && upcomingData.length > 0) {
+             const nextUpcoming = upcomingData.filter(u => u.id !== currentLive?.id);
+             setUpcoming(nextUpcoming.length > 0 ? nextUpcoming : upcomingData);
+          } else {
+             setUpcoming([]);
+          }
 
-        const { data: feedsData } = await supabase.from('feeds').select('*').order('id', { ascending: false }).limit(5);
-        if (feedsData) setFeeds(feedsData);
+          const { data: teamPostsData } = await supabase
+            .from('posts')
+            .select('*, teams(name)')
+            .in('team_id', myTeamIds)
+            .order('created_at', { ascending: false })
+            .limit(5);
+
+          if (teamPostsData) {
+            const mappedFeeds = teamPostsData.map(post => ({
+              id: post.id,
+              type: 'new_post',
+              title: post.title,
+              // 🌟 띄어쓰기(&nbsp;) 정화 로직 적용
+              description: post.content.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ').substring(0, 40) + '...',
+              time_ago: new Date(post.created_at).toLocaleDateString(),
+              target: post.teams?.name || '내 팀'
+            }));
+            setFeeds(mappedFeeds);
+          }
+
+        } else {
+          setUpcoming([]);
+          setFeeds([]);
+        }
 
         const { data: noticesData } = await supabase.from('notices').select('*').order('created_at', { ascending: false }).limit(5);
         if (noticesData) setNotices(noticesData);
@@ -98,7 +142,25 @@ export default function DashboardPage() {
     };
 
     fetchDashboardData();
-  }, [router]);
+  }, [router, currentLive?.id]);
+
+  useEffect(() => {
+    if (!currentLive) return;
+    
+    const interval = setInterval(() => {
+      const now = new Date();
+      const end = new Date(currentLive.end_time);
+      const diff = Math.floor((end.getTime() - now.getTime()) / 60000);
+      
+      if (diff < 0) {
+         setCurrentLive(null); 
+      } else {
+         setRemainingMinutes(diff);
+      }
+    }, 60000);
+    
+    return () => clearInterval(interval);
+  }, [currentLive]);
 
   if (isLoading) return <div className="flex-1 flex items-center justify-center bg-bg-base text-text-muted min-h-screen">데이터를 불러오는 중...</div>
 
@@ -131,10 +193,33 @@ export default function DashboardPage() {
 
       <main className="px-4 md:px-8 py-6 md:py-8 max-w-7xl mx-auto w-full space-y-8">
         
-        {/* Section 1: 다가오는 합주 일정 */}
+        {currentLive && (
+          <div className="relative overflow-hidden rounded-3xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 shadow-sm transition-colors">
+            <div className="p-5 md:p-6 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-emerald-500 flex items-center justify-center text-white shadow-lg shadow-emerald-500/30 animate-pulse shrink-0">
+                  <Mic className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500 text-white uppercase tracking-widest">Live</span>
+                    <h3 className="text-lg md:text-xl font-black text-emerald-700 dark:text-emerald-400 leading-tight">
+                      {currentLive.teams?.name} 합주 중! 🔥
+                    </h3>
+                  </div>
+                  <p className="text-xs md:text-sm text-emerald-600 dark:text-emerald-400/80 font-medium">
+                    📍 {defaultLocation} &nbsp;|&nbsp; ⏰ {new Date(currentLive.start_time).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })} ~ {new Date(currentLive.end_time).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })} 
+                    <span className="ml-1.5 font-bold text-emerald-500">(종료까지 {remainingMinutes}분 남음)</span>
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <section>
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-bold tracking-tight">다가오는 합주 일정</h3>
+            <h3 className="text-lg font-bold tracking-tight">다가오는 내 합주 일정</h3>
             <Link href="/reservation" className="text-primary text-sm font-semibold flex items-center hover:brightness-110">
               전체보기 <ChevronRight className="w-4 h-4 ml-0.5" />
             </Link>
@@ -164,7 +249,6 @@ export default function DashboardPage() {
                         {dDayStr === 'D-DAY' && <span className="size-1.5 bg-white rounded-full animate-pulse"></span>}
                         {dDayStr}
                     </span>
-                    {/* 👇 텍스트 '[팀이름] 합주' 로 변경! */}
                     <p className="text-xl font-black text-white drop-shadow-md tracking-tight">{teamName} 합주</p>
                   </div>
                 </div>
@@ -194,33 +278,35 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* 내 팀 소식 및 주요 공지사항 (기존 유지) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 md:gap-10 pt-4">
           <div className="lg:col-span-8 space-y-6">
             <section>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-lg font-bold tracking-tight">내 팀 소식</h3>
-                <Link href="/team" className="text-text-muted hover:text-primary text-sm font-medium flex items-center gap-0.5">전체보기 <ChevronRight className="w-4 h-4" /></Link>
+                <h3 className="text-lg font-bold tracking-tight">내 팀 소식 </h3>
+                <Link href="/community" className="text-text-muted hover:text-primary text-sm font-medium flex items-center gap-0.5">커뮤니티 가기 <ChevronRight className="w-4 h-4" /></Link>
               </div>
               <div className="space-y-3">
                 {feeds.length === 0 ? (
                   <div className="p-8 text-center bg-bg-surface border border-border-base rounded-2xl text-text-muted text-sm flex flex-col items-center">
-                    <MessageSquare className="w-8 h-8 mb-2 opacity-30" /><p>최근 업데이트된 팀 소식이 없습니다.</p>
+                    <MessageSquare className="w-8 h-8 mb-2 opacity-30" /><p>최근 올라온 팀 전용 게시글이 없습니다.</p>
                   </div>
                 ) : (
                   feeds.map(feed => (
-                    <div key={feed.id} className="p-5 rounded-xl bg-bg-surface border border-border-base shadow-sm hover:border-slate-300 cursor-pointer">
+                    <Link key={feed.id} href="/community" className="block p-5 rounded-xl bg-bg-surface border border-border-base shadow-sm hover:border-emerald-500/50 cursor-pointer transition-colors group">
                       <div className="flex items-start gap-4">
-                        <div className="w-12 h-12 shrink-0 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-500">
-                          <MessageSquare className="w-6 h-6" />
+                        <div className="w-12 h-12 shrink-0 rounded-full bg-emerald-100 dark:bg-emerald-500/10 flex items-center justify-center text-emerald-500 transition-colors">
+                          <Lock className="w-5 h-5" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm leading-relaxed"><span className="font-bold text-primary">[{feed.title}] </span>{feed.description}</p>
-                          <p className="text-xs text-text-muted mt-1">{feed.time_ago}</p>
+                          <p className="text-sm leading-relaxed text-text-base">
+                            <span className="font-bold text-emerald-500">[{feed.target}]</span> <span className="font-bold ml-1">{feed.title}</span> 
+                            <span className="block mt-1 text-text-muted text-xs truncate">{feed.description}</span>
+                          </p>
+                          <p className="text-[10px] text-text-muted mt-1.5 font-medium">{feed.time_ago}</p>
                         </div>
-                        <ChevronRight className="w-5 h-5 text-slate-400 mt-2 shrink-0"/>
+                        <ChevronRight className="w-5 h-5 text-slate-400 mt-3 shrink-0 group-hover:text-emerald-500 transition-colors"/>
                       </div>
-                    </div>
+                    </Link>
                   ))
                 )}
               </div>

@@ -1,18 +1,20 @@
 "use client";
 import React, { useState, useEffect, Fragment, useRef } from 'react';
-import { MessageSquare, Plus, Search, User, Clock, Trash2, X, MessageCircle, ImageIcon, Megaphone, Hash, BarChart2, ChevronDown, ChevronUp, ToggleLeft, ToggleRight, CheckCircle2, Circle, CheckSquare, Square, Reply, Edit3 } from 'lucide-react';
+import { MessageSquare, Plus, Search, User, Clock, Trash2, X, MessageCircle, ImageIcon, Megaphone, Hash, BarChart2, ChevronDown, ChevronUp, ToggleLeft, ToggleRight, CheckCircle2, Circle, CheckSquare, Square, Reply, Edit3, Lock } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 import { supabase } from '../../lib/supabase';
 import dynamic from 'next/dynamic';
-import DOMPurify from 'dompurify'; // 🌟 XSS 방어용 소독(Sanitize) 라이브러리 추가
+import DOMPurify from 'dompurify';
 
 interface BoardCategory { id: number; name: string; parent_id: number | null; is_admin_only: boolean; }
+interface Team { id: number; name: string; }
 interface Post { 
   id: number; title: string; content: string; 
-  category_id: number; sub_category_id: number | null; 
+  category_id: number | null; sub_category_id: number | null; team_id: number | null;
   author_name: string; author_session: string; author_id?: string; 
   created_at: string; comment_count: number; 
   profiles?: { profile_image_url: string; generation?: string }; 
+  teams?: { name: string };
 }
 interface Comment { id: number; content: string; author_name: string; author_session: string; created_at: string; author_id?: string; profiles?: { profile_image_url: string; generation?: string }; }
 
@@ -36,14 +38,16 @@ const formatNameWithGen = (name: string, gen?: string | null) => {
 
 export default function CommunityPage() {
   const [categories, setCategories] = useState<BoardCategory[]>([]);
+  const [myTeams, setMyTeams] = useState<Team[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   
-  const [activeMainCatId, setActiveMainCatId] = useState<number | 'all'>('all');
+  const [activeMainCatId, setActiveMainCatId] = useState<number | 'all' | null>('all');
   const [activeSubCatId, setActiveSubCatId] = useState<number | 'all'>('all');
+  const [activeTeamId, setActiveTeamId] = useState<number | 'all' | null>('all');
 
   const [isWriteModalOpen, setIsWriteModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
@@ -86,6 +90,13 @@ export default function CommunityPage() {
         setCurrentUser(session.user);
         const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
         setUserProfile(profile);
+        
+        // 내 팀 목록 가져오기
+        const { data: teamData } = await supabase.from('team_members').select('teams(id, name)').eq('user_id', session.user.id);
+        if (teamData) {
+           const extractedTeams = teamData.map((d: any) => d.teams).filter(Boolean);
+           setMyTeams(extractedTeams);
+        }
       }
       fetchCategories();
       fetchPosts();
@@ -103,7 +114,7 @@ export default function CommunityPage() {
     try {
       const { data: postsData, error: postsError } = await supabase
         .from('posts')
-        .select('*, comments(count)') 
+        .select('*, comments(count), teams(name)') 
         .order('created_at', { ascending: false });
         
       if (postsError) throw postsError;
@@ -173,7 +184,7 @@ export default function CommunityPage() {
 
   const handleCreateSubCategory = async () => {
     if (!customSubCatName.trim()) return alert('카테고리 이름을 입력해주세요!');
-    if (!writeMainCatId) return alert('먼저 게시판을 선택해주세요!');
+    if (!writeMainCatId || writeMainCatId.startsWith('team_')) return alert('먼저 일반 게시판을 선택해주세요!');
 
     const { data, error } = await supabase.from('board_categories').insert([{
       name: customSubCatName,
@@ -217,21 +228,30 @@ export default function CommunityPage() {
 
         if (isVotingEnabled) {
           validOptions = pollOptions.filter(o => o.trim() !== '');
-          if (validOptions.length === 1) return alert('투표 항목을 2개 이상 입력해주세요.\n(투표 없이 글만 올리시려면 항목을 모두 지워주시면 됩니다!)');
+          if (validOptions.length === 1) return alert('투표 항목을 2개 이상 입력해주세요.');
           if (validOptions.length === 0) willCreatePoll = false; 
         }
 
-        const targetCat = categories.find(c => c.id === parseInt(writeMainCatId));
-        if (targetCat?.is_admin_only && userProfile?.role !== 'admin' && userProfile?.role !== 'president') {
-          setIsSubmitting(false); return alert('해당 카테고리는 관리자만 글을 작성할 수 있습니다.');
+        let catId: number | null = null;
+        let tId: number | null = null;
+
+        if (writeMainCatId.startsWith('team_')) {
+          tId = parseInt(writeMainCatId.replace('team_', ''));
+        } else {
+          catId = parseInt(writeMainCatId);
+          const targetCat = categories.find(c => c.id === catId);
+          if (targetCat?.is_admin_only && userProfile?.role !== 'admin' && userProfile?.role !== 'president') {
+            setIsSubmitting(false); return alert('해당 카테고리는 관리자만 글을 작성할 수 있습니다.');
+          }
         }
 
         const { data: newPostData, error: postError } = await supabase.from('posts').insert([{ 
           title: newTitle, 
           content: newContent, 
           type: 'free',
-          category_id: parseInt(writeMainCatId),
+          category_id: catId,
           sub_category_id: writeSubCatId ? parseInt(writeSubCatId) : null,
+          team_id: tId,
           author_name: userProfile.name, 
           author_session: userProfile.session || '미정', 
           author_id: currentUser.id
@@ -350,17 +370,30 @@ export default function CommunityPage() {
   };
 
   const mainCategories = categories.filter(c => c.parent_id === null);
-  const currentSubCategories = activeMainCatId !== 'all' ? categories.filter(c => c.parent_id === activeMainCatId) : [];
-  const writeSubCategories = writeMainCatId ? categories.filter(c => c.parent_id === parseInt(writeMainCatId)) : [];
+  const currentSubCategories = activeMainCatId !== 'all' && activeMainCatId !== null ? categories.filter(c => c.parent_id === activeMainCatId) : [];
+  const writeSubCategories = writeMainCatId && !writeMainCatId.startsWith('team_') ? categories.filter(c => c.parent_id === parseInt(writeMainCatId)) : [];
 
   const filteredPosts = posts.filter(post => {
-    if (activeMainCatId === 'all') return true;
-    if (post.category_id !== activeMainCatId) return false;
-    if (activeSubCatId !== 'all' && post.sub_category_id !== activeSubCatId) return false;
-    return true;
+    if (activeMainCatId === 'all' && activeTeamId === 'all') {
+      if (post.team_id !== null && !myTeams.some(t => t.id === post.team_id)) return false;
+      return true;
+    }
+    if (activeTeamId && activeTeamId !== 'all') {
+      return post.team_id === activeTeamId;
+    }
+    if (activeMainCatId && activeMainCatId !== 'all') {
+      if (post.team_id !== null) return false; 
+      if (post.category_id !== activeMainCatId) return false;
+      if (activeSubCatId !== 'all' && post.sub_category_id !== activeSubCatId) return false;
+      return true;
+    }
+    return false;
   });
 
-  const getCategoryName = (id: number | null) => categories.find(c => c.id === id)?.name || '기타';
+  const getCategoryName = (post: Post) => {
+    if (post.team_id && post.teams?.name) return post.teams.name;
+    return categories.find(c => c.id === post.category_id)?.name || '기타';
+  };
   const extractFirstImageUrl = (html: string) => { const match = /<img [^>]*src="([^"]*)"/i.exec(html); return match ? match[1] : null; };
 
   const uniqueVoters = new Set(currentPollVotes.map(v => v.user_id)).size;
@@ -379,6 +412,7 @@ export default function CommunityPage() {
             setEditPostId(null); 
             setNewTitle(''); 
             setNewContent(''); 
+            setWriteMainCatId('');
             setIsWriteModalOpen(true);
           }} className="flex items-center gap-1.5 px-4 py-2 bg-primary hover:brightness-110 text-white text-sm font-bold rounded-xl shadow-lg shadow-primary/20 transition shrink-0">
           <Plus className="w-4 h-4" /> 글쓰기
@@ -386,10 +420,15 @@ export default function CommunityPage() {
       </header>
 
       <div className="flex px-6 lg:px-8 border-b border-border-base bg-bg-surface shrink-0 overflow-x-auto custom-scrollbar transition-colors">
-        <button onClick={() => { setActiveMainCatId('all'); setActiveSubCatId('all'); }} className={`px-4 py-4 text-sm font-bold border-b-2 transition-colors shrink-0 ${activeMainCatId === 'all' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-base'}`}>전체보기</button>
+        <button onClick={() => { setActiveMainCatId('all'); setActiveTeamId('all'); setActiveSubCatId('all'); }} className={`px-4 py-4 text-sm font-bold border-b-2 transition-colors shrink-0 ${activeMainCatId === 'all' && activeTeamId === 'all' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-base'}`}>전체보기</button>
         {mainCategories.map(cat => (
-          <button key={cat.id} onClick={() => { setActiveMainCatId(cat.id); setActiveSubCatId('all'); }} className={`px-4 py-4 text-sm font-bold border-b-2 transition-colors shrink-0 ${activeMainCatId === cat.id ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-base'}`}>
+          <button key={cat.id} onClick={() => { setActiveMainCatId(cat.id); setActiveTeamId(null); setActiveSubCatId('all'); }} className={`px-4 py-4 text-sm font-bold border-b-2 transition-colors shrink-0 ${activeMainCatId === cat.id ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-base'}`}>
             {cat.name} {cat.is_admin_only && <Megaphone className="w-3 h-3 inline-block ml-1 text-amber-500"/>}
+          </button>
+        ))}
+        {myTeams.map(team => (
+          <button key={team.id} onClick={() => { setActiveMainCatId(null); setActiveTeamId(team.id); setActiveSubCatId('all'); }} className={`px-4 py-4 text-sm font-bold border-b-2 transition-colors shrink-0 flex items-center gap-1 ${activeTeamId === team.id ? 'border-emerald-500 text-emerald-500' : 'border-transparent text-emerald-500/70 hover:text-emerald-500'}`}>
+            <Lock className="w-3.5 h-3.5" /> {team.name}
           </button>
         ))}
       </div>
@@ -411,23 +450,27 @@ export default function CommunityPage() {
            filteredPosts.length === 0 ? <div className="text-center p-12 text-text-muted border border-border-base border-dashed rounded-2xl bg-bg-surface/50 transition-colors">게시글이 없습니다.</div> : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
               {filteredPosts.map(post => {
-                const mainName = getCategoryName(post.category_id);
-                const subName = post.sub_category_id ? getCategoryName(post.sub_category_id) : null;
+                const mainName = getCategoryName(post);
+                const subName = post.sub_category_id ? categories.find(c => c.id === post.sub_category_id)?.name : null;
                 const isAdminOnly = categories.find(c => c.id === post.category_id)?.is_admin_only;
+                const isTeamPost = post.team_id !== null;
 
                 return (
-                <div key={post.id} onClick={() => { setSelectedPost(post); fetchComments(post.id); fetchPollData(post.id); setIsDetailModalOpen(true); }} className={`bg-bg-surface border ${isAdminOnly ? 'border-amber-500/30' : 'border-border-base'} rounded-2xl overflow-hidden cursor-pointer group hover:border-slate-400 dark:hover:border-slate-500 transition shadow-sm hover:shadow-md dark:shadow-none flex flex-col`}>
+                <div key={post.id} onClick={() => { setSelectedPost(post); fetchComments(post.id); fetchPollData(post.id); setIsDetailModalOpen(true); }} className={`bg-bg-surface border ${isAdminOnly ? 'border-amber-500/30' : isTeamPost ? 'border-emerald-500/30' : 'border-border-base'} rounded-2xl overflow-hidden cursor-pointer group hover:border-slate-400 dark:hover:border-slate-500 transition shadow-sm hover:shadow-md dark:shadow-none flex flex-col`}>
                   
                   <div className="h-32 lg:h-40 bg-slate-200 dark:bg-slate-800 border-b border-border-base flex items-center justify-center relative overflow-hidden transition-colors">
-                    {extractFirstImageUrl(post.content) ? <img src={extractFirstImageUrl(post.content)!} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" /> : (isAdminOnly ? <Megaphone className="w-10 h-10 text-amber-500/40" /> : <MessageSquare className="w-10 h-10 text-slate-400 dark:text-slate-600 opacity-50" />)}
-                    <div className={`absolute top-2 lg:top-3 left-2 lg:left-3 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider border flex items-center gap-1 ${isAdminOnly ? 'bg-amber-100/90 text-amber-600 border-amber-200 dark:bg-amber-500/20 dark:text-amber-500 dark:border-amber-500/30' : 'bg-bg-surface/90 text-text-base border-border-base backdrop-blur-md'}`}>
+                    {extractFirstImageUrl(post.content) ? <img src={extractFirstImageUrl(post.content)!} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" /> : (isAdminOnly ? <Megaphone className="w-10 h-10 text-amber-500/40" /> : isTeamPost ? <Lock className="w-10 h-10 text-emerald-500/40" /> : <MessageSquare className="w-10 h-10 text-slate-400 dark:text-slate-600 opacity-50" />)}
+                    
+                    <div className={`absolute top-2 lg:top-3 left-2 lg:left-3 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider border flex items-center gap-1 ${isAdminOnly ? 'bg-amber-100/90 text-amber-600 border-amber-200 dark:bg-amber-500/20 dark:text-amber-500 dark:border-amber-500/30' : isTeamPost ? 'bg-emerald-100/90 text-emerald-600 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-500 dark:border-emerald-500/30' : 'bg-bg-surface/90 text-text-base border-border-base backdrop-blur-md'}`}>
                       {isAdminOnly && <Megaphone className="w-3 h-3" />}
+                      {isTeamPost && <Lock className="w-3 h-3" />}
                       {mainName} {subName && <span className="text-text-muted font-normal">| {subName}</span>}
                     </div>
                   </div>
 
                   <div className="p-4 lg:p-5 flex-1 flex flex-col justify-between">
-                    <div><h3 className="text-sm lg:text-base font-bold text-text-base mb-1 lg:mb-2 leading-tight line-clamp-2">{post.title}</h3><p className="text-xs lg:text-sm text-text-muted mb-3 lg:mb-4 line-clamp-2">{post.content.replace(/<[^>]*>?/gm, '')}</p></div>
+                    {/* 🌟 띄어쓰기(&nbsp;) 정화 로직 적용 */}
+                    <div><h3 className="text-sm lg:text-base font-bold text-text-base mb-1 lg:mb-2 leading-tight line-clamp-2">{post.title}</h3><p className="text-xs lg:text-sm text-text-muted mb-3 lg:mb-4 line-clamp-2">{post.content.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ')}</p></div>
                     <div className="flex items-center justify-between text-[10px] lg:text-xs text-text-muted border-t border-border-base pt-2 lg:pt-3 transition-colors">
                       <div className="flex items-center gap-1.5 lg:gap-2">
                         <div className="w-5 h-5 lg:w-6 lg:h-6 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden font-bold text-text-muted text-[10px] transition-colors">
@@ -465,14 +508,23 @@ export default function CommunityPage() {
                       <label className="text-[10px] font-bold text-text-muted uppercase mb-1 block">게시판 선택</label>
                       <select value={writeMainCatId} onChange={e => { setWriteMainCatId(e.target.value); setWriteSubCatId(''); setIsAddingSubCat(false); }} className="w-full bg-bg-base border border-border-base rounded-xl p-3 text-text-base outline-none focus:border-primary transition-colors">
                         <option value="">선택</option>
-                        {mainCategories.map(c => {
-                          if (c.is_admin_only && userProfile?.role !== 'admin' && userProfile?.role !== 'president') return null; 
-                          return <option key={c.id} value={c.id}>{c.name}</option>
-                        })}
+                        <optgroup label="공개 게시판">
+                          {mainCategories.map(c => {
+                            if (c.is_admin_only && userProfile?.role !== 'admin' && userProfile?.role !== 'president') return null; 
+                            return <option key={c.id} value={c.id}>{c.name}</option>
+                          })}
+                        </optgroup>
+                        {myTeams.length > 0 && (
+                          <optgroup label="팀 비밀 게시판 (팀원만 볼 수 있음)">
+                            {myTeams.map(t => (
+                              <option key={`team_${t.id}`} value={`team_${t.id}`}>🔒 {t.name}</option>
+                            ))}
+                          </optgroup>
+                        )}
                       </select>
                     </div>
 
-                    {writeMainCatId && (
+                    {writeMainCatId && !writeMainCatId.startsWith('team_') && (
                       <div className="animate-in fade-in zoom-in-95 duration-200">
                         <div className="flex justify-between items-center mb-1">
                           <label className="text-[10px] font-bold text-text-muted uppercase block">세부 카테고리 (선택)</label>
@@ -565,7 +617,10 @@ export default function CommunityPage() {
                 <div className="p-5 lg:p-6 border-b border-border-base shrink-0 relative transition-colors bg-bg-surface z-10 shadow-sm">
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex-1 pr-4">
-                      <span className="inline-block mb-1.5 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider border bg-bg-base text-text-muted border-border-base transition-colors">{getCategoryName(selectedPost.category_id)} {selectedPost.sub_category_id && `> ${getCategoryName(selectedPost.sub_category_id)}`}</span>
+                      <span className="inline-flex items-center w-fit gap-1 mb-1.5 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider border bg-bg-base text-text-muted border-border-base transition-colors">
+                         {selectedPost.team_id && <Lock className="w-3 h-3 text-emerald-500" />}
+                         {getCategoryName(selectedPost)} {selectedPost.sub_category_id && `> ${categories.find(c => c.id === selectedPost.sub_category_id)?.name}`}
+                      </span>
                       <h3 className="text-xl lg:text-2xl font-black text-text-base leading-snug wrap-break-word">{selectedPost.title}</h3>
                     </div>
                     <button onClick={() => setIsDetailModalOpen(false)} className="text-text-muted hover:text-text-base shrink-0 transition-colors p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/50"><X className="w-6 h-6 lg:w-5 lg:h-5"/></button>
@@ -600,7 +655,6 @@ export default function CommunityPage() {
                 {/* 2. 스크롤 가능한 본문 및 댓글 영역 */}
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-5 lg:p-6 pb-6 relative">
                   
-                  {/* 🌟 수정 포인트: dangerouslySetInnerHTML에 DOMPurify.sanitize() 적용하여 악성 스크립트 실행 방어 */}
                   <div className="prose dark:prose-invert max-w-none text-slate-700 dark:text-slate-300 leading-relaxed mb-8 blog-content wrap-break-word overflow-x-hidden" 
                        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selectedPost.content) }} />
                   <style jsx global>{`.blog-content img { max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--border-color); margin: 16px auto; display: block; object-fit: contain; }`}</style>
