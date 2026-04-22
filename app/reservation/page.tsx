@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, Fragment, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation'; // 👈 URL 파라미터를 읽기 위해 추가!
-import { Plus, ChevronLeft, ChevronRight, X, Trash2, Clock, Calendar as CalendarIcon, AlertCircle } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { Plus, ChevronLeft, ChevronRight, X, Trash2, Clock, Calendar as CalendarIcon, AlertCircle, Edit2 } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 import { supabase } from '../../lib/supabase';
 
@@ -18,7 +18,6 @@ interface Booking {
   series_id: string | null;
 }
 
-// Next.js 규칙에 따라 useSearchParams를 안전하게 쓰기 위해 분리
 function TimetableContent() {
   const searchParams = useSearchParams();
   const queryDate = searchParams.get('date');
@@ -33,7 +32,6 @@ function TimetableContent() {
   
   const [bookings, setBookings] = useState<Booking[]>([]);
   
-  // 🚨 쿼리 파라미터 날짜가 있으면 그 날짜를, 없으면 오늘 날짜를 기준으로 달력 이동!
   const [currentViewDate, setCurrentViewDate] = useState(() => {
     return queryDate ? new Date(queryDate) : new Date();
   });
@@ -45,6 +43,10 @@ function TimetableContent() {
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurringEndDate, setRecurringEndDate] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // 🌟 예약 수정 상태 관리 추가
+  const [isEditing, setIsEditing] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
 
   const [dragState, setDragState] = useState<{ isDragging: boolean, date: string | null, start: number | null, end: number | null }>({
     isDragging: false,
@@ -118,12 +120,45 @@ function TimetableContent() {
 
   useEffect(() => { fetchData(); }, []);
   
-  // URL에서 파라미터가 바뀔 때 달력을 동기화
   useEffect(() => {
     if (queryDate) setCurrentViewDate(new Date(queryDate));
   }, [queryDate]);
 
-  const handleMouseDown = (targetDate: string, time: number) => setDragState({ isDragging: true, date: targetDate, start: time, end: time });
+  // 🌟 예약 폼 초기화 함수
+  const resetForm = () => {
+    setTeamId('');
+    setStartTime(8);
+    setEndTime(10);
+    setIsRecurring(false);
+    setRecurringEndDate('');
+    setIsEditing(false);
+    setEditId(null);
+  };
+
+  const handleOpenNew = () => {
+    resetForm();
+    setDate(formatDateString(new Date()));
+    setIsOpen(true);
+  };
+
+  // 🌟 예약 수정 창 열기
+  const handleOpenEdit = () => {
+    if (!selectedBooking) return;
+    setTeamId(selectedBooking.team_id.toString());
+    setDate(selectedBooking.fullDate);
+    setStartTime(selectedBooking.start);
+    setEndTime(selectedBooking.start + selectedBooking.duration);
+    setIsRecurring(false); // 수정 시에는 단일 예약 변경만 허용
+    setIsEditing(true);
+    setEditId(selectedBooking.id);
+    setIsDetailOpen(false);
+    setIsOpen(true);
+  };
+
+  const handleMouseDown = (targetDate: string, time: number) => {
+    resetForm();
+    setDragState({ isDragging: true, date: targetDate, start: time, end: time });
+  };
   const handleMouseEnter = (targetDate: string, time: number) => { if (dragState.isDragging && dragState.date === targetDate) setDragState(prev => ({ ...prev, end: time })); };
 
   const handleMouseUp = () => {
@@ -167,19 +202,13 @@ function TimetableContent() {
         curr.setDate(curr.getDate() + 7);
       }
       
-      const series_id = isRecurring ? crypto.randomUUID() : null;
-
-      const payload = datesToBook.map(d => ({
-        team_id: parseInt(teamId),
-        reservation_date: d,
-        start_time: new Date(`${d}T${formatTimeToString(startTime)}:00+09:00`).toISOString(),
-        end_time: new Date(`${d}T${formatTimeToString(endTime)}:00+09:00`).toISOString(),
-        is_recurring: isRecurring,
-        recurring_end_date: isRecurring ? recurringEndDate : null,
-        series_id: series_id
-      }));
-
-      const { data: existing } = await supabase.from('reservations').select('*').in('reservation_date', datesToBook);
+      // 🌟 중복 검사 로직 (수정 시에는 본인 예약 제외)
+      let overlapQuery = supabase.from('reservations').select('*').in('reservation_date', datesToBook);
+      if (isEditing && editId) {
+        overlapQuery = overlapQuery.neq('id', editId);
+      }
+      
+      const { data: existing } = await overlapQuery;
       const overlap = existing?.some((res: any) => {
         const s = new Date(res.start_time).getHours() + new Date(res.start_time).getMinutes() / 60;
         const e = new Date(res.end_time).getHours() + new Date(res.end_time).getMinutes() / 60;
@@ -188,17 +217,50 @@ function TimetableContent() {
 
       if (overlap) { alert('❌ 선택하신 시간에 겹치는 예약이 있습니다.'); setIsSubmitting(false); return; }
 
-      const { error } = await supabase.from('reservations').insert(payload);
-      if (error) {
-        if (error.code === '23P01' || error.message.includes('prevent_overlapping_reservations')) {
-           alert('🚨 방금 전 다른 누군가가 간발의 차이로 해당 시간을 먼저 예약했습니다! 시간을 다시 선택해주세요.');
-        } else { alert('예약 처리 중 오류가 발생했습니다: ' + error.message); }
-        setIsSubmitting(false); return;
+      // 🌟 수정 로직
+      if (isEditing && editId) {
+        const updatePayload = {
+          team_id: parseInt(teamId),
+          reservation_date: date,
+          start_time: new Date(`${date}T${formatTimeToString(startTime)}:00+09:00`).toISOString(),
+          end_time: new Date(`${date}T${formatTimeToString(endTime)}:00+09:00`).toISOString(),
+        };
+
+        const { error } = await supabase.from('reservations').update(updatePayload).eq('id', editId);
+        if (error) throw error;
+        alert('🎉 예약이 성공적으로 수정되었습니다!');
+
+      // 🌟 신규 추가 로직
+      } else {
+        const series_id = isRecurring ? crypto.randomUUID() : null;
+        const payload = datesToBook.map(d => ({
+          team_id: parseInt(teamId),
+          reservation_date: d,
+          start_time: new Date(`${d}T${formatTimeToString(startTime)}:00+09:00`).toISOString(),
+          end_time: new Date(`${d}T${formatTimeToString(endTime)}:00+09:00`).toISOString(),
+          is_recurring: isRecurring,
+          recurring_end_date: isRecurring ? recurringEndDate : null,
+          series_id: series_id
+        }));
+
+        const { error } = await supabase.from('reservations').insert(payload);
+        if (error) throw error;
+        alert(`🎉 예약이 완료되었습니다! ${isRecurring ? `(총 ${datesToBook.length}건)` : ''}`);
       }
 
-      alert(`🎉 예약이 완료되었습니다! ${isRecurring ? `(총 ${datesToBook.length}건)` : ''}`);
-      setIsOpen(false); fetchData(); setTeamId(''); setIsRecurring(false); setRecurringEndDate('');
-    } catch (e: any) { alert('오류: ' + e.message); } finally { setIsSubmitting(false); }
+      setIsOpen(false); 
+      resetForm();
+      fetchData(); 
+
+    } catch (e: any) { 
+      if (e.code === '23P01' || e.message?.includes('prevent_overlapping_reservations')) {
+        alert('🚨 방금 전 다른 누군가가 간발의 차이로 해당 시간을 먼저 예약했습니다! 시간을 다시 선택해주세요.');
+      } else {
+        alert('오류: ' + e.message); 
+      }
+    } finally { 
+      setIsSubmitting(false); 
+    }
   };
 
   const weekDays = (() => {
@@ -235,7 +297,7 @@ function TimetableContent() {
               <button onClick={() => {const d = new Date(currentViewDate); d.setDate(d.getDate()+7); setCurrentViewDate(d);}} className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-800/50 text-text-muted rounded transition"><ChevronRight className="w-4 h-4" /></button>
             </div>
           </div>
-          <button onClick={() => { setDate(formatDateString(new Date())); setIsOpen(true); }} className="hidden lg:flex px-4 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:brightness-110 shadow-lg transition items-center gap-2">
+          <button onClick={handleOpenNew} className="hidden lg:flex px-4 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:brightness-110 shadow-lg transition items-center gap-2">
             <Plus className="w-4 h-4" /> 신규 예약
           </button>
         </header>
@@ -289,25 +351,30 @@ function TimetableContent() {
       {isOpen && (
         <aside className="hidden lg:block w-80 bg-bg-surface border-l border-border-base p-6 overflow-y-auto shrink-0 animate-in slide-in-from-right-full duration-300 ease-out shadow-2xl transition-colors">
           <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-bold text-text-base border-l-4 border-primary pl-2 uppercase tracking-tight">New Booking</h3>
-            <button onClick={() => setIsOpen(false)} className="text-text-muted hover:text-text-base transition p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800/50"><X className="w-5 h-5" /></button>
+            <h3 className="text-lg font-bold text-text-base border-l-4 border-primary pl-2 uppercase tracking-tight">
+              {isEditing ? 'Edit Booking' : 'New Booking'}
+            </h3>
+            <button onClick={() => { setIsOpen(false); resetForm(); }} className="text-text-muted hover:text-text-base transition p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800/50"><X className="w-5 h-5" /></button>
           </div>
-          <ReservationForm teamId={teamId} setTeamId={setTeamId} date={date} setDate={setDate} startTime={startTime} setStartTime={setStartTime} endTime={endTime} setEndTime={setEndTime} isRecurring={isRecurring} setIsRecurring={setIsRecurring} recurringEndDate={recurringEndDate} setRecurringEndDate={setRecurringEndDate} isSubmitting={isSubmitting} handleReservation={handleReservation} teams={teams} formatTimeToString={formatTimeToString} timeSlots={timeSlots} />
+          <ReservationForm teamId={teamId} setTeamId={setTeamId} date={date} setDate={setDate} startTime={startTime} setStartTime={setStartTime} endTime={endTime} setEndTime={setEndTime} isRecurring={isRecurring} setIsRecurring={setIsRecurring} recurringEndDate={recurringEndDate} setRecurringEndDate={setRecurringEndDate} isSubmitting={isSubmitting} handleReservation={handleReservation} teams={teams} formatTimeToString={formatTimeToString} timeSlots={timeSlots} isEditing={isEditing} />
         </aside>
       )}
 
-      <button onClick={() => { setDate(formatDateString(new Date())); setIsOpen(true); }} className="lg:hidden fixed bottom-28 right-6 w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-lg z-40 hover:scale-105 transition-transform">
+      <button onClick={handleOpenNew} className="lg:hidden fixed bottom-28 right-6 w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-lg z-40 hover:scale-105 transition-transform">
         <Plus className="w-8 h-8 text-white" />
       </button>
 
       {isOpen && (
         <div className="fixed inset-x-0 bottom-0 z-50 lg:hidden flex items-end justify-center">
-          <div className="relative w-full max-h-[90vh] overflow-y-auto custom-scrollbar bg-bg-surface border-t border-border-base p-6 rounded-t-3xl shadow-2xl animate-in slide-in-from-bottom-full duration-300 ease-out transition-colors">
+          {/* 🌟 모바일 UI 문제 해결: pb-28 추가하여 하단 버튼이 가려지지 않도록 수정 */}
+          <div className="relative w-full max-h-[90vh] overflow-y-auto custom-scrollbar bg-bg-surface border-t border-border-base p-6 pb-28 rounded-t-3xl shadow-2xl animate-in slide-in-from-bottom-full duration-300 ease-out transition-colors">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-bold text-text-base uppercase tracking-tight">New Booking</h3>
-              <button onClick={() => setIsOpen(false)} className="text-text-muted hover:text-text-base transition-colors"><X className="w-6 h-6" /></button>
+              <h3 className="text-lg font-bold text-text-base uppercase tracking-tight">
+                {isEditing ? 'Edit Booking' : 'New Booking'}
+              </h3>
+              <button onClick={() => { setIsOpen(false); resetForm(); }} className="text-text-muted hover:text-text-base transition-colors"><X className="w-6 h-6" /></button>
             </div>
-            <ReservationForm teamId={teamId} setTeamId={setTeamId} date={date} setDate={setDate} startTime={startTime} setStartTime={setStartTime} endTime={endTime} setEndTime={setEndTime} isRecurring={isRecurring} setIsRecurring={setIsRecurring} recurringEndDate={recurringEndDate} setRecurringEndDate={setRecurringEndDate} isSubmitting={isSubmitting} handleReservation={handleReservation} teams={teams} formatTimeToString={formatTimeToString} timeSlots={timeSlots} />
+            <ReservationForm teamId={teamId} setTeamId={setTeamId} date={date} setDate={setDate} startTime={startTime} setStartTime={setStartTime} endTime={endTime} setEndTime={setEndTime} isRecurring={isRecurring} setIsRecurring={setIsRecurring} recurringEndDate={recurringEndDate} setRecurringEndDate={setRecurringEndDate} isSubmitting={isSubmitting} handleReservation={handleReservation} teams={teams} formatTimeToString={formatTimeToString} timeSlots={timeSlots} isEditing={isEditing} />
           </div>
         </div>
       )}
@@ -341,6 +408,13 @@ function TimetableContent() {
               <div className="flex flex-col gap-2">
                 {(isAdmin || (selectedBooking && myTeamIds.includes(selectedBooking.team_id))) ? (
                   <>
+                    {/* 🌟 예약 수정 버튼 추가 */}
+                    <button onClick={handleOpenEdit} className="w-full py-3 bg-slate-100 dark:bg-slate-800 text-text-base border border-border-base rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition flex items-center justify-center gap-2">
+                      <Edit2 className="w-4 h-4" /> 현재 일정 수정
+                    </button>
+                    
+                    <div className="h-px bg-border-base my-2" />
+
                     <button onClick={() => handleDeleteBooking('single')} className="w-full py-3 bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-500 border border-rose-200 dark:border-rose-500/20 rounded-xl font-bold hover:bg-rose-500 hover:text-white dark:hover:bg-rose-500 transition flex items-center justify-center gap-2">
                       <Trash2 className="w-4 h-4" /> 현재 일정만 취소
                     </button>
@@ -352,7 +426,7 @@ function TimetableContent() {
                   </>
                 ) : (
                   <div className="w-full py-3 bg-slate-100 dark:bg-slate-800 text-text-muted rounded-xl font-bold text-center text-sm border border-border-base">
-                    본인이 속한 팀의 예약만 취소할 수 있습니다.
+                    본인이 속한 팀의 예약만 취소/수정할 수 있습니다.
                   </div>
                 )}
 
@@ -367,7 +441,7 @@ function TimetableContent() {
   );
 }
 
-function ReservationForm({ teamId, setTeamId, date, setDate, startTime, setStartTime, endTime, setEndTime, isRecurring, setIsRecurring, recurringEndDate, setRecurringEndDate, isSubmitting, handleReservation, teams, formatTimeToString, timeSlots }: any) {
+function ReservationForm({ teamId, setTeamId, date, setDate, startTime, setStartTime, endTime, setEndTime, isRecurring, setIsRecurring, recurringEndDate, setRecurringEndDate, isSubmitting, handleReservation, teams, formatTimeToString, timeSlots, isEditing }: any) {
   const handleSetWeeks = (weeks: number) => {
     if (!date) return alert('예약 시작 날짜를 먼저 선택해주세요!');
     const startDate = new Date(date);
@@ -391,16 +465,19 @@ function ReservationForm({ teamId, setTeamId, date, setDate, startTime, setStart
       
       <div className="space-y-4">
         <div>
-          <label className="text-[10px] font-bold text-text-muted uppercase mb-1 block tracking-widest">Start Date</label>
+          <label className="text-[10px] font-bold text-text-muted uppercase mb-1 block tracking-widest">Date</label>
           <input type="date" value={date} onChange={e => setDate(e.target.value)} className="scheme-light dark:scheme-dark w-full bg-bg-base border border-border-base rounded-lg p-3 text-text-base focus:border-primary outline-none transition-colors cursor-pointer block" />
         </div>
 
-        <label className="flex items-center gap-3 cursor-pointer group bg-bg-base/50 p-3 rounded-lg border border-border-base hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
-          <input type="checkbox" checked={isRecurring} onChange={e => setIsRecurring(e.target.checked)} className="w-5 h-5 rounded border-slate-300 dark:border-slate-700 text-primary bg-bg-surface focus:ring-primary transition-colors" />
-          <span className="text-sm font-bold text-text-muted group-hover:text-text-base transition-colors">정기 스케줄로 등록</span>
-        </label>
+        {/* 🌟 수정 모드일 때는 정기 예약 옵션을 숨김 처리하여 로직 꼬임을 방지합니다 */}
+        {!isEditing && (
+          <label className="flex items-center gap-3 cursor-pointer group bg-bg-base/50 p-3 rounded-lg border border-border-base hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
+            <input type="checkbox" checked={isRecurring} onChange={e => setIsRecurring(e.target.checked)} className="w-5 h-5 rounded border-slate-300 dark:border-slate-700 text-primary bg-bg-surface focus:ring-primary transition-colors" />
+            <span className="text-sm font-bold text-text-muted group-hover:text-text-base transition-colors">정기 스케줄로 등록</span>
+          </label>
+        )}
 
-        {isRecurring && (
+        {isRecurring && !isEditing && (
           <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl space-y-2 animate-in fade-in slide-in-from-top-2">
             <label className="text-[10px] font-bold text-primary uppercase block tracking-widest">Until (End Date)</label>
             <input type="date" value={recurringEndDate} onChange={e => setRecurringEndDate(e.target.value)} className="scheme-light dark:scheme-dark w-full bg-bg-surface border border-primary/30 rounded-lg p-3 text-text-base focus:border-primary outline-none transition-colors cursor-pointer" />
@@ -421,13 +498,12 @@ function ReservationForm({ teamId, setTeamId, date, setDate, startTime, setStart
       </div>
 
       <button onClick={handleReservation} disabled={isSubmitting || teams.length === 0} className="w-full py-4 bg-primary text-white font-bold rounded-xl hover:brightness-110 disabled:opacity-50 transition shadow-lg shadow-primary/20 mt-4">
-        {isSubmitting ? '처리 중...' : '예약 확정하기'}
+        {isSubmitting ? '처리 중...' : (isEditing ? '예약 수정하기' : '예약 확정하기')}
       </button>
     </div>
   );
 }
 
-// 빌드 중 에러를 막기 위해 최상단은 Suspense로 감싸기
 export default function TimetablePageWrapper() {
   return (
     <Suspense fallback={<div className="flex items-center justify-center min-h-screen text-slate-500">예약 일정을 불러오는 중입니다...</div>}>
