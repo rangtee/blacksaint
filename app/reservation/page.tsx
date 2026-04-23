@@ -132,6 +132,18 @@ function TimetableContent() {
     setIsEditing(true); setEditId(selectedBooking.id); setIsDetailOpen(false); setIsOpen(true);
   };
 
+  // 🌟 마우스 드래그 기능 완벽 복구
+  const handleMouseUp = () => {
+    if (dragState.isDragging && dragState.date !== null && dragState.start !== null && dragState.end !== null) {
+      const finalStart = Math.min(dragState.start, dragState.end);
+      const finalEnd = Math.max(dragState.start, dragState.end) + 0.5; 
+      if (finalEnd - finalStart > 0) {
+        setDate(dragState.date); setStartTime(finalStart); setEndTime(finalEnd); setIsOpen(true);
+      }
+    }
+    setDragState({ isDragging: false, date: null, start: null, end: null });
+  };
+
   const handleDeleteBooking = async (type: 'single' | 'series') => {
     if (!selectedBooking) return;
     const confirmMsg = type === 'series' ? '이 정기 예약의 모든 일정을 취소하시겠습니까?' : '이 일정만 취소하시겠습니까?';
@@ -216,46 +228,58 @@ function TimetableContent() {
           </button>
         </header>
 
-        <div ref={scrollContainerRef} className="flex-1 overflow-auto p-4 lg:p-8 pb-32 lg:pb-8 custom-scrollbar relative">
-          {/* 🌟 overflow-hidden 제거: 자식의 sticky가 막히지 않도록 수정 */}
-          <div className="w-full min-w-max bg-bg-surface rounded-xl border border-border-base shadow-sm dark:shadow-2xl transition-colors relative">
+        {/* 🌟 레이아웃 변경: 스크롤 영역을 달력 '내부'로 분리하여 헤더를 완벽하게 고정합니다. */}
+        <div className="flex-1 p-4 lg:p-8 pb-32 lg:pb-8 flex flex-col overflow-hidden relative">
+          <div className="flex-1 w-full bg-bg-surface rounded-xl border border-border-base shadow-sm dark:shadow-2xl transition-colors flex flex-col overflow-x-auto overflow-y-hidden custom-scrollbar">
             
-            {/* 🌟 날짜 헤더가 떨어지지 않도록 확실하게 고정 (z-20, shadow 추가) */}
-            <div className="grid grid-cols-8 border-b border-border-base bg-bg-surface text-center transition-colors sticky top-0 z-20 rounded-t-xl shadow-sm">
-              <div className="p-4 border-r border-border-base text-xs font-bold text-text-muted bg-bg-surface uppercase rounded-tl-xl">Time</div>
-              {weekDays.map((d, i) => (
-                <div key={i} className={`py-3 border-r border-border-base flex flex-col items-center justify-center bg-bg-surface transition-colors ${i === 6 ? 'border-r-0 rounded-tr-xl' : ''}`}>
-                  <span className={`text-[10px] font-bold mb-1 uppercase ${d.isToday ? 'text-primary' : 'text-text-muted'}`}>{d.day}</span>
-                  <span className={`text-sm font-bold ${d.isToday ? 'text-primary' : 'text-text-base'}`}>{d.dateNum}</span>
-                </div>
-              ))}
-            </div>
-            
-            <div className="relative grid grid-cols-8">
-              <div className="border-r border-border-base col-span-1 bg-bg-surface transition-colors">
-                {hours.map(h => <div key={h} className="h-20 border-b border-border-base flex items-start justify-center pt-2 text-[10px] font-bold text-text-muted">{formatTimeToString(h)}</div>)}
+            <div className="min-w-200 flex flex-col h-full">
+              
+              {/* 1. 상단 헤더 (스크롤 영향을 전혀 받지 않음) */}
+              <div className="grid grid-cols-8 border-b border-border-base bg-bg-surface text-center transition-colors shrink-0 z-20 shadow-sm relative">
+                <div className="p-4 border-r border-border-base text-xs font-bold text-text-muted bg-bg-surface uppercase rounded-tl-xl">Time</div>
+                {weekDays.map((d, i) => (
+                  <div key={i} className={`py-3 border-r border-border-base flex flex-col items-center justify-center bg-bg-surface transition-colors ${i === 6 ? 'border-r-0' : ''}`}>
+                    <span className={`text-[10px] font-bold mb-1 uppercase ${d.isToday ? 'text-primary' : 'text-text-muted'}`}>{d.day}</span>
+                    <span className={`text-sm font-bold ${d.isToday ? 'text-primary' : 'text-text-base'}`}>{d.dateNum}</span>
+                  </div>
+                ))}
               </div>
               
-              <div className="col-span-7 grid grid-cols-7 relative bg-bg-base transition-colors select-none" onMouseUp={() => setDragState({ isDragging: false, date: null, start: null, end: null })}>
-                {weekDays.map((wd, di) => (
-                  <div key={di} className="border-r border-border-base last:border-0 relative">
-                    {hours.map(h => (
-                      <div key={h} onMouseDown={() => { resetForm(); setDragState({ isDragging: true, date: wd.fullDate, start: h, end: h }); }} 
-                           onMouseEnter={() => { if (dragState.isDragging && dragState.date === wd.fullDate) setDragState(prev => ({ ...prev, end: h })); }}
-                           className={`h-20 border-b border-border-base cursor-pointer transition-colors hover:bg-slate-200/30 dark:hover:bg-slate-800/30`} />
+              {/* 2. 하단 스크롤 영역 (달력 내용물만 스크롤됨) */}
+              <div 
+                ref={scrollContainerRef} 
+                className="flex-1 overflow-y-auto overflow-x-hidden relative bg-bg-base transition-colors custom-scrollbar"
+                onMouseUp={handleMouseUp}
+                onMouseLeave={() => setDragState({ isDragging: false, date: null, start: null, end: null })}
+              >
+                <div className="relative grid grid-cols-8">
+                  <div className="border-r border-border-base col-span-1 bg-bg-surface transition-colors">
+                    {hours.map(h => <div key={h} className="h-20 border-b border-border-base flex items-start justify-center pt-2 text-[10px] font-bold text-text-muted">{formatTimeToString(h)}</div>)}
+                  </div>
+                  
+                  <div className="col-span-7 grid grid-cols-7 relative bg-bg-base transition-colors select-none">
+                    {weekDays.map((wd, di) => (
+                      <div key={di} className="border-r border-border-base last:border-0 relative">
+                        {hours.map(h => (
+                          <div key={h} onMouseDown={() => { resetForm(); setDragState({ isDragging: true, date: wd.fullDate, start: h, end: h }); }} 
+                               onMouseEnter={() => { if (dragState.isDragging && dragState.date === wd.fullDate) setDragState(prev => ({ ...prev, end: h })); }}
+                               className={`h-20 border-b border-border-base cursor-pointer transition-colors hover:bg-slate-200/30 dark:hover:bg-slate-800/30 ${dragState.isDragging && dragState.date === wd.fullDate && h >= Math.min(dragState.start!, dragState.end!) && h <= Math.max(dragState.start!, dragState.end!) ? 'bg-primary/20 dark:bg-primary/30' : ''}`} />
+                        ))}
+                      </div>
+                    ))}
+                    
+                    {bookings.filter(b => weekDays.some(wd => wd.fullDate === b.fullDate)).map(b => (
+                      <div key={b.id} onClick={(e) => { e.stopPropagation(); setSelectedBooking(b); setIsDetailOpen(true); }} 
+                           className="absolute inset-x-1 rounded p-2 md:p-2.5 z-10 shadow-md hover:brightness-110 transition cursor-pointer flex flex-col"
+                           style={{ top: `${(b.start - 8) * 5}rem`, left: `calc((100% / 7) * ${b.dayIndex})`, width: `calc(100% / 7 - 8px)`, height: `calc(${b.duration * 5}rem - 4px)`, marginLeft: '4px', marginTop: '2px', backgroundColor: b.teamColor, color: '#ffffff', }}>
+                        <p className="text-xs sm:text-sm md:text-base font-black uppercase truncate leading-tight mb-0.5 drop-shadow-sm">{b.team}</p>
+                        <p className="text-[10px] sm:text-xs font-semibold opacity-90 tracking-tight drop-shadow-sm">{formatTimeToString(b.start)} - {formatTimeToString(b.start+b.duration)}</p>
+                      </div>
                     ))}
                   </div>
-                ))}
-                
-                {bookings.filter(b => weekDays.some(wd => wd.fullDate === b.fullDate)).map(b => (
-                  <div key={b.id} onClick={(e) => { e.stopPropagation(); setSelectedBooking(b); setIsDetailOpen(true); }} 
-                       className="absolute inset-x-1 rounded p-2 md:p-2.5 z-10 shadow-md hover:brightness-110 transition cursor-pointer flex flex-col"
-                       style={{ top: `${(b.start - 8) * 5}rem`, left: `calc((100% / 7) * ${b.dayIndex})`, width: `calc(100% / 7 - 8px)`, height: `calc(${b.duration * 5}rem - 4px)`, marginLeft: '4px', marginTop: '2px', backgroundColor: b.teamColor, color: '#ffffff', }}>
-                    <p className="text-xs sm:text-sm md:text-base font-black uppercase truncate leading-tight mb-0.5 drop-shadow-sm">{b.team}</p>
-                    <p className="text-[10px] sm:text-xs font-semibold opacity-90 tracking-tight drop-shadow-sm">{formatTimeToString(b.start)} - {formatTimeToString(b.start+b.duration)}</p>
-                  </div>
-                ))}
+                </div>
               </div>
+
             </div>
           </div>
         </div>
