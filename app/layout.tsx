@@ -7,7 +7,8 @@ import { ThemeProvider } from 'next-themes';
 import { LayoutDashboard, Users, CalendarDays, MessageSquare, MessageCircle, Shield, LogOut, User, Music, ChevronLeft, Hash, Home, Calendar, Menu, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import NotificationBell from '@/components/NotificationBell';
-import './globals.css';
+// @ts-ignore
+import '@/app/globals.css';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -32,7 +33,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // 🌟 [추가된 부분] 앱 실행 시 서비스 워커(백그라운드 푸시 알림) 1회 등록
   useEffect(() => {
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js')
@@ -89,6 +89,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   if (pathname === '/login' || pathname === '/signup') { 
     return (
       <html lang="ko" suppressHydrationWarning>
+        {/* 🌟 PWA 설정: 로그인 화면 헤더에 manifest 및 아이콘 연결 */}
+        <head>
+          <link rel="manifest" href="/manifest.json" />
+          <meta name="theme-color" content="#0f172a" />
+          <link rel="apple-touch-icon" href="/icon-192.png" />
+        </head>
         <body className={inter.className}>
           <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
             {children}
@@ -134,6 +140,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <html lang="ko" className="h-full" suppressHydrationWarning>
+      {/* 🌟 PWA 설정: 메인 앱 화면 헤더에 manifest 및 아이콘 연결 */}
+      <head>
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#0f172a" />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
+      </head>
       <body className={`${inter.className} flex h-full overflow-hidden transition-colors duration-300`}>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
           

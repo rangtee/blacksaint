@@ -31,7 +31,7 @@ function TimetableContent() {
   const [isAdmin, setIsAdmin] = useState(false); 
   
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const scrollContainerRef = useRef<HTMLDivElement>(null); // 🌟 스크롤 제어를 위한 Ref
+  const scrollContainerRef = useRef<HTMLDivElement>(null); 
   
   const [currentViewDate, setCurrentViewDate] = useState(() => {
     return queryDate ? new Date(queryDate) : new Date();
@@ -103,20 +103,17 @@ function TimetableContent() {
 
   useEffect(() => { fetchData(); }, []);
 
-  // 🌟 [핵심] 가장 앞선 일정 시간대로 자동 스크롤 로직
   useEffect(() => {
     if (bookings.length > 0 && scrollContainerRef.current) {
       const weekRange = weekDays.map(wd => wd.fullDate);
       const currentWeekBookings = bookings.filter(b => weekRange.includes(b.fullDate));
       
-      let targetHour = 12; // 예약이 없을 때 기본값 (낮 12시)
+      let targetHour = 12; 
       
       if (currentWeekBookings.length > 0) {
-        // 이번 주 일정 중 가장 숫자가 작은(빠른) 시간을 찾음
         targetHour = Math.min(...currentWeekBookings.map(b => b.start));
       }
 
-      // 시간당 높이 5rem (80px) 기준으로 스크롤 이동
       const scrollOffset = (targetHour - 8) * 80;
       scrollContainerRef.current.scrollTo({ top: scrollOffset, behavior: 'smooth' });
     }
@@ -219,15 +216,15 @@ function TimetableContent() {
           </button>
         </header>
 
-        {/* 🌟 날짜 헤더 고정을 위해 구조 개선 */}
         <div ref={scrollContainerRef} className="flex-1 overflow-auto p-4 lg:p-8 pb-32 lg:pb-8 custom-scrollbar relative">
-          <div className="w-full min-w-max bg-bg-surface rounded-xl border border-border-base overflow-hidden shadow-sm dark:shadow-2xl transition-colors relative">
+          {/* 🌟 overflow-hidden 제거: 자식의 sticky가 막히지 않도록 수정 */}
+          <div className="w-full min-w-max bg-bg-surface rounded-xl border border-border-base shadow-sm dark:shadow-2xl transition-colors relative">
             
-            {/* 🌟 Sticky Header: 스크롤해도 날짜는 위에 고정됩니다. */}
-            <div className="grid grid-cols-8 border-b border-border-base bg-bg-surface text-center transition-colors sticky top-0 z-20">
-              <div className="p-4 border-r border-border-base text-xs font-bold text-text-muted bg-bg-base/90 backdrop-blur-sm uppercase">Time</div>
+            {/* 🌟 날짜 헤더가 떨어지지 않도록 확실하게 고정 (z-20, shadow 추가) */}
+            <div className="grid grid-cols-8 border-b border-border-base bg-bg-surface text-center transition-colors sticky top-0 z-20 rounded-t-xl shadow-sm">
+              <div className="p-4 border-r border-border-base text-xs font-bold text-text-muted bg-bg-surface uppercase rounded-tl-xl">Time</div>
               {weekDays.map((d, i) => (
-                <div key={i} className="py-3 border-r border-border-base last:border-0 flex flex-col items-center justify-center bg-bg-base/90 backdrop-blur-sm transition-colors">
+                <div key={i} className={`py-3 border-r border-border-base flex flex-col items-center justify-center bg-bg-surface transition-colors ${i === 6 ? 'border-r-0 rounded-tr-xl' : ''}`}>
                   <span className={`text-[10px] font-bold mb-1 uppercase ${d.isToday ? 'text-primary' : 'text-text-muted'}`}>{d.day}</span>
                   <span className={`text-sm font-bold ${d.isToday ? 'text-primary' : 'text-text-base'}`}>{d.dateNum}</span>
                 </div>
