@@ -67,6 +67,19 @@ function TimetableContent() {
     return `${h}:${m}`;
   };
 
+  const weekDays = (() => {
+    const day = currentViewDate.getDay() === 0 ? 6 : currentViewDate.getDay() - 1;
+    const start = new Date(currentViewDate);
+    start.setDate(currentViewDate.getDate() - day);
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start); d.setDate(start.getDate() + i);
+      const fullDate = formatDateString(d);
+      days.push({ day: ['월','화','수','목','금','토','일'][i], dateNum: d.getDate(), fullDate: fullDate, isToday: fullDate === formatDateString(new Date()) });
+    }
+    return days;
+  })();
+
   const fetchData = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) {
@@ -104,18 +117,26 @@ function TimetableContent() {
   useEffect(() => { fetchData(); }, []);
 
   useEffect(() => {
-    if (bookings.length > 0 && scrollContainerRef.current) {
-      const weekRange = weekDays.map(wd => wd.fullDate);
-      const currentWeekBookings = bookings.filter(b => weekRange.includes(b.fullDate));
-      
+    if (scrollContainerRef.current) {
       let targetHour = 12; 
-      
-      if (currentWeekBookings.length > 0) {
-        targetHour = Math.min(...currentWeekBookings.map(b => b.start));
+      if (bookings.length > 0) {
+        const weekRange = weekDays.map(wd => wd.fullDate);
+        const currentWeekBookings = bookings.filter(b => weekRange.includes(b.fullDate));
+        if (currentWeekBookings.length > 0) {
+          targetHour = Math.min(...currentWeekBookings.map(b => b.start));
+        }
       }
+      const scrollTop = (targetHour - 8) * 80;
 
-      const scrollOffset = (targetHour - 8) * 80;
-      scrollContainerRef.current.scrollTo({ top: scrollOffset, behavior: 'smooth' });
+      let scrollLeft = 0;
+      if (window.innerWidth < 768) {
+        const todayIndex = weekDays.findIndex(wd => wd.isToday);
+        if (todayIndex !== -1) {
+          scrollLeft = todayIndex * 110; 
+        }
+      }
+      
+      scrollContainerRef.current.scrollTo({ top: scrollTop, left: scrollLeft, behavior: 'smooth' });
     }
   }, [bookings, currentViewDate]);
 
@@ -132,7 +153,6 @@ function TimetableContent() {
     setIsEditing(true); setEditId(selectedBooking.id); setIsDetailOpen(false); setIsOpen(true);
   };
 
-  // 🌟 마우스 드래그 기능 완벽 복구
   const handleMouseUp = () => {
     if (dragState.isDragging && dragState.date !== null && dragState.start !== null && dragState.end !== null) {
       const finalStart = Math.min(dragState.start, dragState.end);
@@ -198,23 +218,11 @@ function TimetableContent() {
     } catch (e: any) { alert('오류: ' + e.message); } finally { setIsSubmitting(false); }
   };
 
-  const weekDays = (() => {
-    const day = currentViewDate.getDay() === 0 ? 6 : currentViewDate.getDay() - 1;
-    const start = new Date(currentViewDate);
-    start.setDate(currentViewDate.getDate() - day);
-    const days = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(start); d.setDate(start.getDate() + i);
-      const fullDate = formatDateString(d);
-      days.push({ day: ['월','화','수','목','금','토','일'][i], dateNum: d.getDate(), fullDate: fullDate, isToday: fullDate === formatDateString(new Date()) });
-    }
-    return days;
-  })();
-
   return (
     <div className="flex-1 flex flex-col lg:flex-row h-full bg-bg-base text-text-base overflow-hidden relative transition-colors duration-300">
       <div className="flex-1 flex flex-col h-full overflow-hidden">
-        <header className="pt-8 pb-4 px-4 lg:px-8 border-b border-border-base flex justify-between items-center bg-bg-surface/80 backdrop-blur-md z-30 transition-colors">
+        
+        <header className="pt-8 pb-4 px-4 lg:px-8 border-b border-border-base flex justify-between items-center bg-bg-surface/80 backdrop-blur-md z-10 transition-colors">
           <div className="flex items-center gap-4">
             <h2 className="text-xl font-bold">{currentViewDate.getFullYear()}년 {currentViewDate.getMonth()+1}월</h2>
             <div className="flex bg-bg-base p-1 rounded-lg border border-border-base transition-colors">
@@ -228,58 +236,62 @@ function TimetableContent() {
           </button>
         </header>
 
-        {/* 🌟 레이아웃 변경: 스크롤 영역을 달력 '내부'로 분리하여 헤더를 완벽하게 고정합니다. */}
-        <div className="flex-1 p-4 lg:p-8 pb-32 lg:pb-8 flex flex-col overflow-hidden relative">
-          <div className="flex-1 w-full bg-bg-surface rounded-xl border border-border-base shadow-sm dark:shadow-2xl transition-colors flex flex-col overflow-x-auto overflow-y-hidden custom-scrollbar">
+        <div className="flex-1 p-0 md:p-4 lg:p-8 pb-32 lg:pb-8 flex flex-col overflow-hidden relative">
+          <div className="flex-1 w-full bg-bg-surface md:rounded-xl border-y md:border border-border-base shadow-sm dark:shadow-2xl transition-colors flex flex-col overflow-hidden">
             
-            <div className="min-w-200 flex flex-col h-full">
-              
-              {/* 1. 상단 헤더 (스크롤 영향을 전혀 받지 않음) */}
-              <div className="grid grid-cols-8 border-b border-border-base bg-bg-surface text-center transition-colors shrink-0 z-20 shadow-sm relative">
-                <div className="p-4 border-r border-border-base text-xs font-bold text-text-muted bg-bg-surface uppercase rounded-tl-xl">Time</div>
-                {weekDays.map((d, i) => (
-                  <div key={i} className={`py-3 border-r border-border-base flex flex-col items-center justify-center bg-bg-surface transition-colors ${i === 6 ? 'border-r-0' : ''}`}>
-                    <span className={`text-[10px] font-bold mb-1 uppercase ${d.isToday ? 'text-primary' : 'text-text-muted'}`}>{d.day}</span>
-                    <span className={`text-sm font-bold ${d.isToday ? 'text-primary' : 'text-text-base'}`}>{d.dateNum}</span>
+            <div ref={scrollContainerRef} className="flex-1 overflow-auto custom-scrollbar relative flex flex-col">
+              <div className="min-w-max md:min-w-full flex flex-col">
+                
+                {/* 🌟 수정된 부분: w-[50px] -> w-12.5, md:w-[80px] -> md:w-20, w-[110px] -> w-27.5 적용 */}
+                <div className="flex border-b border-border-base bg-bg-surface text-center transition-colors sticky top-0 z-30 shadow-sm">
+                  <div className="w-12.5 md:w-20 p-2 md:p-4 border-r border-border-base text-[10px] md:text-xs font-bold text-text-muted bg-bg-surface uppercase sticky left-0 z-40 rounded-tl-xl shrink-0 flex items-center justify-center shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                    Time
                   </div>
-                ))}
-              </div>
-              
-              {/* 2. 하단 스크롤 영역 (달력 내용물만 스크롤됨) */}
-              <div 
-                ref={scrollContainerRef} 
-                className="flex-1 overflow-y-auto overflow-x-hidden relative bg-bg-base transition-colors custom-scrollbar"
-                onMouseUp={handleMouseUp}
-                onMouseLeave={() => setDragState({ isDragging: false, date: null, start: null, end: null })}
-              >
-                <div className="relative grid grid-cols-8">
-                  <div className="border-r border-border-base col-span-1 bg-bg-surface transition-colors">
+                  
+                  {weekDays.map((d, i) => (
+                    <div key={i} className={`w-27.5 md:w-0 md:flex-1 py-3 border-r border-border-base flex flex-col items-center justify-center bg-bg-surface transition-colors ${i === 6 ? 'border-r-0 md:rounded-tr-xl' : ''} shrink-0`}>
+                      <span className={`text-[10px] font-bold mb-1 uppercase ${d.isToday ? 'text-primary' : 'text-text-muted'}`}>{d.day}</span>
+                      <span className={`text-sm md:text-base font-bold ${d.isToday ? 'text-primary' : 'text-text-base'}`}>{d.dateNum}</span>
+                    </div>
+                  ))}
+                </div>
+                
+                <div className="flex relative bg-bg-base transition-colors flex-1" onMouseUp={handleMouseUp} onMouseLeave={() => setDragState({ isDragging: false, date: null, start: null, end: null })}>
+                  
+                  {/* 🌟 수정된 부분: w-[50px] -> w-12.5, md:w-[80px] -> md:w-20 적용 */}
+                  <div className="w-12.5 md:w-20 border-r border-border-base bg-bg-surface transition-colors sticky left-0 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] shrink-0">
                     {hours.map(h => <div key={h} className="h-20 border-b border-border-base flex items-start justify-center pt-2 text-[10px] font-bold text-text-muted">{formatTimeToString(h)}</div>)}
                   </div>
                   
-                  <div className="col-span-7 grid grid-cols-7 relative bg-bg-base transition-colors select-none">
-                    {weekDays.map((wd, di) => (
-                      <div key={di} className="border-r border-border-base last:border-0 relative">
-                        {hours.map(h => (
-                          <div key={h} onMouseDown={() => { resetForm(); setDragState({ isDragging: true, date: wd.fullDate, start: h, end: h }); }} 
-                               onMouseEnter={() => { if (dragState.isDragging && dragState.date === wd.fullDate) setDragState(prev => ({ ...prev, end: h })); }}
-                               className={`h-20 border-b border-border-base cursor-pointer transition-colors hover:bg-slate-200/30 dark:hover:bg-slate-800/30 ${dragState.isDragging && dragState.date === wd.fullDate && h >= Math.min(dragState.start!, dragState.end!) && h <= Math.max(dragState.start!, dragState.end!) ? 'bg-primary/20 dark:bg-primary/30' : ''}`} />
-                        ))}
-                      </div>
-                    ))}
-                    
-                    {bookings.filter(b => weekDays.some(wd => wd.fullDate === b.fullDate)).map(b => (
-                      <div key={b.id} onClick={(e) => { e.stopPropagation(); setSelectedBooking(b); setIsDetailOpen(true); }} 
-                           className="absolute inset-x-1 rounded p-2 md:p-2.5 z-10 shadow-md hover:brightness-110 transition cursor-pointer flex flex-col"
-                           style={{ top: `${(b.start - 8) * 5}rem`, left: `calc((100% / 7) * ${b.dayIndex})`, width: `calc(100% / 7 - 8px)`, height: `calc(${b.duration * 5}rem - 4px)`, marginLeft: '4px', marginTop: '2px', backgroundColor: b.teamColor, color: '#ffffff', }}>
-                        <p className="text-xs sm:text-sm md:text-base font-black uppercase truncate leading-tight mb-0.5 drop-shadow-sm">{b.team}</p>
-                        <p className="text-[10px] sm:text-xs font-semibold opacity-90 tracking-tight drop-shadow-sm">{formatTimeToString(b.start)} - {formatTimeToString(b.start+b.duration)}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+                  {/* 🌟 수정된 부분: w-[110px] -> w-27.5 적용 */}
+                  {weekDays.map((wd, di) => (
+                    <div key={di} className="w-27.5 md:w-0 md:flex-1 border-r border-border-base last:border-0 relative shrink-0 block">
+                      
+                      {hours.map(h => (
+                        <div key={h} onMouseDown={() => { resetForm(); setDragState({ isDragging: true, date: wd.fullDate, start: h, end: h }); }} 
+                             onMouseEnter={() => { if (dragState.isDragging && dragState.date === wd.fullDate) setDragState(prev => ({ ...prev, end: h })); }}
+                             className={`h-20 border-b border-border-base cursor-pointer transition-colors hover:bg-slate-200/30 dark:hover:bg-slate-800/30 ${dragState.isDragging && dragState.date === wd.fullDate && h >= Math.min(dragState.start!, dragState.end!) && h <= Math.max(dragState.start!, dragState.end!) ? 'bg-primary/20 dark:bg-primary/30' : ''}`} />
+                      ))}
 
+                      {bookings.filter(b => b.fullDate === wd.fullDate).map(b => (
+                        <div key={b.id} onClick={(e) => { e.stopPropagation(); setSelectedBooking(b); setIsDetailOpen(true); }} 
+                             className="absolute rounded p-1.5 md:p-2.5 z-10 shadow-md hover:brightness-110 transition cursor-pointer flex flex-col overflow-hidden border border-black/5"
+                             style={{ 
+                               top: `${(b.start - 8) * 5}rem`, 
+                               left: '4px', right: '4px', 
+                               height: `calc(${b.duration * 5}rem - 4px)`, 
+                               marginTop: '2px', 
+                               backgroundColor: b.teamColor, color: '#ffffff' 
+                             }}>
+                          <p className="text-[10px] md:text-sm font-black uppercase truncate leading-tight mb-0.5 drop-shadow-sm">{b.team}</p>
+                          <p className="text-[9px] md:text-xs font-semibold opacity-90 tracking-tight drop-shadow-sm">{formatTimeToString(b.start)} - {formatTimeToString(b.start+b.duration)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+
+              </div>
             </div>
           </div>
         </div>
@@ -295,7 +307,7 @@ function TimetableContent() {
         </aside>
       )}
 
-      <button onClick={() => { resetForm(); setDate(formatDateString(new Date())); setIsOpen(true); }} className="lg:hidden fixed bottom-28 right-6 w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-lg z-40 hover:scale-105 transition-transform">
+      <button onClick={() => { resetForm(); setDate(formatDateString(new Date())); setIsOpen(true); }} className="lg:hidden fixed bottom-24 right-6 w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-lg z-40 hover:scale-105 transition-transform">
         <Plus className="w-8 h-8 text-white" />
       </button>
 
