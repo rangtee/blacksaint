@@ -236,13 +236,14 @@ function TimetableContent() {
           </button>
         </header>
 
-        <div className="flex-1 p-0 md:p-4 lg:p-8 pb-32 lg:pb-8 flex flex-col overflow-hidden relative">
+        {/* 🌟 수정된 부분: 모바일에서 화면을 꽉 채우기 위해 불필요한 pb 제거 (p-0 적용) */}
+        <div className="flex-1 p-0 md:p-4 lg:p-8 flex flex-col overflow-hidden relative">
           <div className="flex-1 w-full bg-bg-surface md:rounded-xl border-y md:border border-border-base shadow-sm dark:shadow-2xl transition-colors flex flex-col overflow-hidden">
             
-            <div ref={scrollContainerRef} className="flex-1 overflow-auto custom-scrollbar relative flex flex-col">
+            {/* 🌟 수정된 부분: 맨 아래 내용을 볼 때 떠 있는 버튼에 안 가려지도록 스크롤 안쪽에만 pb-24 적용 */}
+            <div ref={scrollContainerRef} className="flex-1 overflow-auto custom-scrollbar relative flex flex-col pb-24 lg:pb-0">
               <div className="min-w-max md:min-w-full flex flex-col">
                 
-                {/* 🌟 수정된 부분: w-[50px] -> w-12.5, md:w-[80px] -> md:w-20, w-[110px] -> w-27.5 적용 */}
                 <div className="flex border-b border-border-base bg-bg-surface text-center transition-colors sticky top-0 z-30 shadow-sm">
                   <div className="w-12.5 md:w-20 p-2 md:p-4 border-r border-border-base text-[10px] md:text-xs font-bold text-text-muted bg-bg-surface uppercase sticky left-0 z-40 rounded-tl-xl shrink-0 flex items-center justify-center shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                     Time
@@ -258,12 +259,10 @@ function TimetableContent() {
                 
                 <div className="flex relative bg-bg-base transition-colors flex-1" onMouseUp={handleMouseUp} onMouseLeave={() => setDragState({ isDragging: false, date: null, start: null, end: null })}>
                   
-                  {/* 🌟 수정된 부분: w-[50px] -> w-12.5, md:w-[80px] -> md:w-20 적용 */}
                   <div className="w-12.5 md:w-20 border-r border-border-base bg-bg-surface transition-colors sticky left-0 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] shrink-0">
                     {hours.map(h => <div key={h} className="h-20 border-b border-border-base flex items-start justify-center pt-2 text-[10px] font-bold text-text-muted">{formatTimeToString(h)}</div>)}
                   </div>
                   
-                  {/* 🌟 수정된 부분: w-[110px] -> w-27.5 적용 */}
                   {weekDays.map((wd, di) => (
                     <div key={di} className="w-27.5 md:w-0 md:flex-1 border-r border-border-base last:border-0 relative shrink-0 block">
                       
@@ -307,7 +306,8 @@ function TimetableContent() {
         </aside>
       )}
 
-      <button onClick={() => { resetForm(); setDate(formatDateString(new Date())); setIsOpen(true); }} className="lg:hidden fixed bottom-24 right-6 w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-lg z-40 hover:scale-105 transition-transform">
+      {/* 🌟 수정된 부분: 예약 추가 버튼을 하단 네비게이션 위로 살짝 올려서 예쁘게 떠 있게 배치 (bottom-24) */}
+      <button onClick={() => { resetForm(); setDate(formatDateString(new Date())); setIsOpen(true); }} className="lg:hidden fixed bottom-24 right-6 w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-lg shadow-primary/40 z-40 hover:scale-105 transition-transform">
         <Plus className="w-8 h-8 text-white" />
       </button>
 
